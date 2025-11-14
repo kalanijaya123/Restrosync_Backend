@@ -7,9 +7,7 @@ import com.restrosync.backend.repository.TableRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Set;
-import java.util.Map;
+import java.util.*;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -22,6 +20,39 @@ public class OrderController {
     public OrderController(OrderRepository orderRepository, TableRepository tableRepository) {
         this.orderRepository = orderRepository;
         this.tableRepository = tableRepository;
+    }
+
+    // DASHBOARD STATS
+    @GetMapping("/dashboard/stats")
+    public ResponseEntity<Map<String, Object>> getDashboardStats() {
+        long totalOrders = orderRepository.count();
+        double totalRevenue = orderRepository.findAll().stream()
+                .filter(o -> "paid".equals(o.status()))
+                .mapToDouble(Order::total)
+                .sum();
+        long activeTables = tableRepository.findAll().stream()
+                .filter(t -> "occupied".equals(t.status()))
+                .count();
+
+        Map<String, Object> stats = Map.of(
+                "totalOrders", totalOrders,
+                "totalRevenue", totalRevenue,
+                "activeTables", activeTables);
+        return ResponseEntity.ok(stats);
+    }
+
+    // THIRD-PARTY ORDERS
+    @GetMapping("/thirdparty")
+    public List<Order> getThirdPartyOrders() {
+        // Simulate real 3rd-party orders (UberEats, DoorDash)
+        return List.of(
+                new Order(null, "UberEats", List.of(
+                        new Order.OrderItem("Burger", 1, 12.99),
+                        new Order.OrderItem("Fries", 1, 4.99)), 17.98, "pending", LocalDateTime.now(),
+                        LocalDateTime.now()),
+                new Order(null, "DoorDash", List.of(
+                        new Order.OrderItem("Pizza", 2, 15.99)), 31.98, "preparing",
+                        LocalDateTime.now().minusMinutes(5), LocalDateTime.now()));
     }
 
     @GetMapping("/current")
@@ -37,6 +68,16 @@ public class OrderController {
                 .filter(o -> "paid".equals(o.status()))
                 .sorted((a, b) -> b.createdAt().compareTo(a.createdAt()))
                 .toList();
+    }
+
+    @GetMapping("/current/total")
+    public ResponseEntity<Map<String, Double>> getCurrentTotal() {
+        double total = orderRepository.findAll().stream()
+                .filter(o -> Set.of("pending", "preparing", "ready").contains(o.status()))
+                .mapToDouble(Order::total)
+                .sum();
+
+        return ResponseEntity.ok(Map.of("total", total));
     }
 
     @GetMapping("/kds")
@@ -58,7 +99,6 @@ public class OrderController {
                 LocalDateTime.now());
         Order saved = orderRepository.save(newOrder);
 
-        // Update table status
         tableRepository.findById(order.tableId())
                 .ifPresent(t -> tableRepository.save(new Table(t.id(), t.number(), "occupied", saved.id())));
 
@@ -86,7 +126,6 @@ public class OrderController {
                             "paid", order.createdAt(), LocalDateTime.now());
                     Order saved = orderRepository.save(paid);
 
-                    // Free table
                     tableRepository.findById(order.tableId())
                             .ifPresent(t -> tableRepository.save(new Table(t.id(), t.number(), "dirty", null)));
 
@@ -94,4 +133,5 @@ public class OrderController {
                 })
                 .orElse(ResponseEntity.notFound().build());
     }
+    
 }
