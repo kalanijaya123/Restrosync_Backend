@@ -6,6 +6,7 @@ import com.restrosync.backend.repository.OrderRepository;
 import com.restrosync.backend.repository.TableRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -14,124 +15,217 @@ import java.util.*;
 @CrossOrigin(origins = "http://localhost:5173")
 public class OrderController {
 
-    private final OrderRepository orderRepository;
-    private final TableRepository tableRepository;
+        private final OrderRepository orderRepository;
+        private final TableRepository tableRepository;
 
-    public OrderController(OrderRepository orderRepository, TableRepository tableRepository) {
-        this.orderRepository = orderRepository;
-        this.tableRepository = tableRepository;
-    }
+        public OrderController(OrderRepository orderRepository, TableRepository tableRepository) {
+                this.orderRepository = orderRepository;
+                this.tableRepository = tableRepository;
+        }
 
-    // DASHBOARD STATS
-    @GetMapping("/dashboard/stats")
-    public ResponseEntity<Map<String, Object>> getDashboardStats() {
-        long totalOrders = orderRepository.count();
-        double totalRevenue = orderRepository.findAll().stream()
-                .filter(o -> "paid".equals(o.status()))
-                .mapToDouble(Order::total)
-                .sum();
-        long activeTables = tableRepository.findAll().stream()
-                .filter(t -> "occupied".equals(t.status()))
-                .count();
+        // DASHBOARD STATS
+        @GetMapping("/dashboard/stats")
+        public ResponseEntity<Map<String, Object>> getDashboardStats() {
+                long totalOrders = orderRepository.count();
+                double totalRevenue = orderRepository.findAll().stream()
+                                .filter(o -> "paid".equals(o.status()))
+                                .mapToDouble(Order::total)
+                                .sum();
 
-        Map<String, Object> stats = Map.of(
-                "totalOrders", totalOrders,
-                "totalRevenue", totalRevenue,
-                "activeTables", activeTables);
-        return ResponseEntity.ok(stats);
-    }
+                long activeTables = tableRepository.findAll().stream()
+                                .filter(t -> "occupied".equals(t.status()))
+                                .count();
 
-    // THIRD-PARTY ORDERS
-    @GetMapping("/thirdparty")
-    public List<Order> getThirdPartyOrders() {
-        // Simulate real 3rd-party orders (UberEats, DoorDash)
-        return List.of(
-                new Order(null, "UberEats", List.of(
-                        new Order.OrderItem("Burger", 1, 12.99),
-                        new Order.OrderItem("Fries", 1, 4.99)), 17.98, "pending", LocalDateTime.now(),
-                        LocalDateTime.now()),
-                new Order(null, "DoorDash", List.of(
-                        new Order.OrderItem("Pizza", 2, 15.99)), 31.98, "preparing",
-                        LocalDateTime.now().minusMinutes(5), LocalDateTime.now()));
-    }
+                Map<String, Object> stats = Map.of(
+                                "totalOrders", totalOrders,
+                                "totalRevenue", Math.round(totalRevenue * 100.0) / 100.0,
+                                "activeTables", activeTables);
+                return ResponseEntity.ok(stats);
+        }
 
-    @GetMapping("/current")
-    public List<Order> getCurrentOrders() {
-        return orderRepository.findAll().stream()
-                .filter(o -> Set.of("pending", "preparing", "ready").contains(o.status()))
-                .toList();
-    }
+        // SIMULATED THIRD-PARTY ORDERS
+        @GetMapping("/thirdparty")
+        public List<Order> getThirdPartyOrders() {
+                // Use Arrays.asList for compatibility with older Java versions and avoid
+                // referencing Order.OrderItem
+                // (which may not be a visible nested type); provide empty item lists for these
+                // simulated entries.
+                return Arrays.asList(
+                                new Order(null, 999, null, "UberEats", Collections.emptyList(), 35.96, "pending",
+                                                LocalDateTime.now().minusMinutes(3), LocalDateTime.now()),
+                                new Order(null, 998, null, "DoorDash", Collections.emptyList(), 18.99, "preparing",
+                                                LocalDateTime.now().minusMinutes(8), LocalDateTime.now()));
+        }
 
-    @GetMapping("/history")
-    public List<Order> getOrderHistory() {
-        return orderRepository.findAll().stream()
-                .filter(o -> "paid".equals(o.status()))
-                .sorted((a, b) -> b.createdAt().compareTo(a.createdAt()))
-                .toList();
-    }
+        @GetMapping("/current")
+        public List<Order> getCurrentOrders() {
+                return orderRepository.findAll().stream()
+                                .filter(o -> Set.of("pending", "preparing", "ready").contains(o.status()))
+                                .sorted(Comparator.comparing(Order::createdAt).reversed())
+                                .toList();
+        }
 
-    @GetMapping("/current/total")
-    public ResponseEntity<Map<String, Double>> getCurrentTotal() {
-        double total = orderRepository.findAll().stream()
-                .filter(o -> Set.of("pending", "preparing", "ready").contains(o.status()))
-                .mapToDouble(Order::total)
-                .sum();
+        @GetMapping("/history")
+        public List<Order> getOrderHistory() {
+                return orderRepository.findAll().stream()
+                                .filter(o -> "paid".equals(o.status()))
+                                .sorted(Comparator.comparing(Order::createdAt).reversed())
+                                .toList();
+        }
 
-        return ResponseEntity.ok(Map.of("total", total));
-    }
+        @GetMapping("/current/total")
+        public ResponseEntity<Map<String, Double>> getCurrentTotal() {
+                double total = orderRepository.findAll().stream()
+                                .filter(o -> Set.of("pending", "preparing", "ready").contains(o.status()))
+                                .mapToDouble(Order::total)
+                                .sum();
+                return ResponseEntity.ok(Map.of("total", Math.round(total * 100.0) / 100.0));
+        }
 
-    @GetMapping("/kds")
-    public List<Order> getKDS() {
-        return orderRepository.findAll().stream()
-                .filter(o -> Set.of("pending", "preparing").contains(o.status()))
-                .toList();
-    }
+        @GetMapping("/kds")
+        public List<Order> getKDSOrders() {
+                return orderRepository.findAll().stream()
+                                .filter(o -> Set.of("pending", "preparing").contains(o.status()))
+                                .sorted(Comparator.comparing(Order::createdAt))
+                                .toList();
+        }
 
-    @PostMapping
-    public ResponseEntity<Order> createOrder(@RequestBody Order order) {
-        Order newOrder = new Order(
-                null,
-                order.tableId(),
-                order.items(),
-                order.total(),
-                "pending",
-                LocalDateTime.now(),
-                LocalDateTime.now());
-        Order saved = orderRepository.save(newOrder);
+        // CREATE ORDER WITH DAILY RESETTING ORDER NUMBER
+        @PostMapping
+        public ResponseEntity<?> createOrder(
+                        @RequestBody com.restrosync.backend.model.CreateOrderRequest orderRequest) {
+                LocalDate today = LocalDate.now();
 
-        tableRepository.findById(order.tableId())
-                .ifPresent(t -> tableRepository.save(new Table(t.id(), t.number(), "occupied", saved.id())));
+                // Get today's highest orderNo
+                int nextOrderNo = orderRepository.findAll().stream()
+                                .filter(o -> o.createdAt() != null && o.createdAt().toLocalDate().equals(today))
+                                .mapToInt(o -> o.orderNo() != null ? o.orderNo() : 0)
+                                .max()
+                                .orElse(0) + 1;
 
-        return ResponseEntity.ok(saved);
-    }
+                // Resolve tableId from provided tableNumber (if any)
+                String tableId = null;
+                if (orderRequest.tableNumber() != null && !orderRequest.tableNumber().isBlank()) {
+                        tableId = tableRepository.findByNumber(orderRequest.tableNumber())
+                                        .map(Table::id)
+                                        .orElse(null);
+                }
 
-    @PutMapping("/{id}/status")
-    public ResponseEntity<Order> updateStatus(@PathVariable String id, @RequestBody Map<String, String> body) {
-        return orderRepository.findById(id)
-                .map(order -> {
-                    Order updated = new Order(
-                            order.id(), order.tableId(), order.items(), order.total(),
-                            body.get("status"), order.createdAt(), LocalDateTime.now());
-                    return ResponseEntity.ok(orderRepository.save(updated));
-                })
-                .orElse(ResponseEntity.notFound().build());
-    }
+                Order newOrder = new Order(
+                                null,
+                                nextOrderNo,
+                                tableId,
+                                orderRequest.source(), // "dine-in" or "takeaway"
+                                orderRequest.items(),
+                                orderRequest.total(),
+                                "pending",
+                                LocalDateTime.now(),
+                                LocalDateTime.now());
 
-    @PutMapping("/{id}/pay")
-    public ResponseEntity<Order> payOrder(@PathVariable String id) {
-        return orderRepository.findById(id)
-                .map(order -> {
-                    Order paid = new Order(
-                            order.id(), order.tableId(), order.items(), order.total(),
-                            "paid", order.createdAt(), LocalDateTime.now());
-                    Order saved = orderRepository.save(paid);
+                Order savedOrder = orderRepository.save(newOrder);
 
-                    tableRepository.findById(order.tableId())
-                            .ifPresent(t -> tableRepository.save(new Table(t.id(), t.number(), "dirty", null)));
+                Map<String, Object> response = new HashMap<>();
+                response.put("order", savedOrder);
+                response.put("orderNo", savedOrder.orderNo());
 
-                    return ResponseEntity.ok(saved);
-                })
-                .orElse(ResponseEntity.notFound().build());
-    }
-    
+                // ONLY UPDATE TABLE IF we resolved a tableId
+                if (tableId != null && !tableId.isBlank()) {
+                        tableRepository.findById(tableId)
+                                        .ifPresent(table -> {
+                                                Table updatedTable = new Table(
+                                                                table.id(),
+                                                                table.number(),
+                                                                table.chairs(),
+                                                                "occupied",
+                                                                savedOrder.id(),
+                                                                table.x(),
+                                                                table.y());
+                                                tableRepository.save(updatedTable);
+                                                response.put("table", updatedTable);
+                                        });
+                }
+
+                return ResponseEntity.ok(response);
+        }
+
+        // UPDATE ORDER STATUS
+        @PutMapping("/{id}/status")
+        public ResponseEntity<Order> updateOrderStatus(
+                        @PathVariable String id,
+                        @RequestBody Map<String, String> body) {
+
+                String newStatus = body.get("status");
+
+                return orderRepository.findById(id)
+                                .map(order -> {
+                                        Order updated = new Order(
+                                                        order.id(),
+                                                        order.orderNo(),
+                                                        order.tableId(),
+                                                        order.source(),
+                                                        order.items(),
+                                                        order.total(),
+                                                        newStatus,
+                                                        order.createdAt(),
+                                                        LocalDateTime.now());
+                                        return ResponseEntity.ok(orderRepository.save(updated));
+                                })
+                                .orElse(ResponseEntity.notFound().build());
+        }
+
+        // PAY ORDER → Reset table only if it had one
+        @PutMapping("/{id}/pay")
+        public ResponseEntity<Order> payOrder(@PathVariable String id) {
+                return orderRepository.findById(id)
+                                .map(order -> {
+                                        Order paidOrder = new Order(
+                                                        order.id(),
+                                                        order.orderNo(),
+                                                        order.tableId(),
+                                                        order.source(),
+                                                        order.items(),
+                                                        order.total(),
+                                                        "paid",
+                                                        order.createdAt(),
+                                                        LocalDateTime.now());
+                                        Order saved = orderRepository.save(paidOrder);
+
+                                        // Only free the table if it was assigned
+                                        if (order.tableId() != null && !order.tableId().isBlank()) {
+                                                tableRepository.findById(order.tableId())
+                                                                .ifPresent(table -> {
+                                                                        Table updatedTable = new Table(
+                                                                                        table.id(),
+                                                                                        table.number(),
+                                                                                        table.chairs(),
+                                                                                        "available",
+                                                                                        null,
+                                                                                        table.x(),
+                                                                                        table.y());
+                                                                        tableRepository.save(updatedTable);
+                                                                });
+                                        }
+
+                                        return ResponseEntity.ok(saved);
+                                })
+                                .orElse(ResponseEntity.notFound().build());
+        }
+
+        // Clear table (after cleaning)
+        @PutMapping("/table/{tableId}/clear")
+        public ResponseEntity<Void> clearTable(@PathVariable String tableId) {
+                tableRepository.findById(tableId)
+                                .ifPresent(table -> {
+                                        Table cleaned = new Table(
+                                                        table.id(),
+                                                        table.number(),
+                                                        table.chairs(),
+                                                        "available",
+                                                        null,
+                                                        table.x(),
+                                                        table.y());
+                                        tableRepository.save(cleaned);
+                                });
+                return ResponseEntity.ok().build();
+        }
 }

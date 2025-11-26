@@ -5,15 +5,24 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.LocalDateTime;
 import java.util.List;
 
-@Document("orders")
 public record Order(
-        @Id String id,
-        String tableId,
-        List<OrderItem> items,
-        double total,
-        String status, // "pending", "preparing", "ready", "served", "paid"
-        LocalDateTime createdAt,
-        LocalDateTime updatedAt) {
-    public record OrderItem(String name, int qty, double price) {
-    }
+    String id,
+    Integer orderNo,           // NEW
+    String tableId,            // Can be null
+    String source,             // "dine-in", "takeaway", "UberEats"
+    List<OrderItem> items,
+    double total,
+    String status,
+    LocalDateTime createdAt,
+    LocalDateTime updatedAt
+) {
+}
+
+// Simple OrderItem record declared in the same package/file so the type is available to Order.
+record OrderItem(
+    String id,
+    String name,
+    Integer quantity,
+    double price
+) {
 }
