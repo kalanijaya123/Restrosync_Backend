@@ -18,7 +18,7 @@ import java.util.UUID;
 public class MenuController {
 
     private final MenuRepository menuRepository;
-    private static final String UPLOAD_DIR = "uploads/menu-images/"; // ← MUST BE THIS
+    private static final String UPLOAD_DIR = "uploads/menu/"; // store under uploads/menu, served at /media/
 
     public MenuController(MenuRepository menuRepository) {
         this.menuRepository = menuRepository;
@@ -37,34 +37,81 @@ public class MenuController {
 
     @PostMapping
     public ResponseEntity<MenuItem> createMenuItem(
-            @RequestParam("name") String name,
-            @RequestParam("category") String category,
-            @RequestParam("sizes") String sizesJson,
+            @RequestParam(value = "payload", required = false) String payload,
+            @RequestParam(value = "name", required = false) String name,
+            @RequestParam(value = "category", required = false) String category,
+            @RequestParam(value = "sizes", required = false) String sizesJson,
             @RequestParam(value = "recipe", required = false, defaultValue = "[]") String recipeJson,
+            @RequestParam(value = "extras", required = false, defaultValue = "[]") String extrasJson,
             @RequestParam(value = "media", required = false) MultipartFile media) {
 
         try {
+            String finalName = name;
+            String finalCategory = category;
+            String finalSizesJson = sizesJson;
+            String finalRecipeJson = recipeJson;
+            String finalExtrasJson = extrasJson;
+
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+            if (payload != null && !payload.isBlank()) {
+                // payload is a JSON string produced by the frontend
+                com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(payload);
+                if (finalName == null)
+                    finalName = root.path("name").asText(null);
+                if (finalCategory == null)
+                    finalCategory = root.path("category").asText(null);
+                if ((finalSizesJson == null || finalSizesJson.isBlank()) && root.has("sizes")) {
+                    finalSizesJson = mapper.writeValueAsString(root.get("sizes"));
+                }
+                if ((finalRecipeJson == null || finalRecipeJson.isBlank()) && root.has("recipe")) {
+                    finalRecipeJson = mapper.writeValueAsString(root.get("recipe"));
+                }
+                if ((finalExtrasJson == null || finalExtrasJson.isBlank()) && root.has("extras")) {
+                    finalExtrasJson = mapper.writeValueAsString(root.get("extras"));
+                }
+            }
+
             String imageUrl = null;
             if (media != null && !media.isEmpty()) {
                 String fileName = UUID.randomUUID() + "_" + media.getOriginalFilename();
-                Path path = Paths.get(UPLOAD_DIR + fileName);
-                Files.write(path, media.getBytes());
-                imageUrl = "http://localhost:8080/images/" + fileName; // ← matches /images/** // served via static
+                Path path = Paths.get(UPLOAD_DIR);
+                Files.createDirectories(path);
+                Path target = path.resolve(fileName);
+                try (var is = media.getInputStream()) {
+                    Files.copy(is, target);
+                }
+                imageUrl = "http://localhost:8080/media/" + fileName;
             }
+
+            List<MenuItem.Size> sizes = finalSizesJson == null || finalSizesJson.isBlank()
+                    ? List.of()
+                    : mapper.readValue(finalSizesJson,
+                            new com.fasterxml.jackson.core.type.TypeReference<List<MenuItem.Size>>() {
+                            });
+
+            List<MenuItem.RecipeItem> recipeList = finalRecipeJson == null || finalRecipeJson.isBlank()
+                    ? List.of()
+                    : mapper.readValue(finalRecipeJson,
+                            new com.fasterxml.jackson.core.type.TypeReference<List<MenuItem.RecipeItem>>() {
+                            });
+
+            List<MenuItem.ExtraItem> extrasList = finalExtrasJson == null || finalExtrasJson.isBlank()
+                    ? List.of()
+                    : mapper.readValue(finalExtrasJson,
+                            new com.fasterxml.jackson.core.type.TypeReference<List<MenuItem.ExtraItem>>() {
+                            });
 
             MenuItem item = new MenuItem(
                     null,
-                    name,
-                    category,
-                    null, // legacy price
-                    new com.fasterxml.jackson.databind.ObjectMapper().readValue(sizesJson,
-                            new com.fasterxml.jackson.core.type.TypeReference<>() {
-                            }),
+                    finalName,
+                    finalCategory,
+                    null,
+                    sizes,
                     true,
                     imageUrl,
-                    new com.fasterxml.jackson.databind.ObjectMapper().readValue(recipeJson,
-                            new com.fasterxml.jackson.core.type.TypeReference<>() {
-                            }));
+                    recipeList,
+                    extrasList);
 
             MenuItem saved = menuRepository.save(item);
             return ResponseEntity.ok(saved);
@@ -87,7 +134,7 @@ public class MenuController {
                 .map(item -> {
                     MenuItem updated = new MenuItem(
                             item.id(), item.name(), item.category(), item.price(),
-                            item.sizes(), !item.available(), item.mediaUrl(), item.recipe());
+                            item.sizes(), !item.available(), item.mediaUrl(), item.recipe(), item.extras());
                     return ResponseEntity.ok(menuRepository.save(updated));
                 })
                 .orElse(ResponseEntity.notFound().build());
