@@ -1,54 +1,36 @@
 package com.restrosync.backend.controller;
 
 import com.restrosync.backend.model.User;
-import com.restrosync.backend.repository.UserRepository;
+import com.restrosync.backend.service.AuthService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.Map;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/auth")
 @CrossOrigin(origins = "http://localhost:5173")
+@RequiredArgsConstructor
+@Slf4j
 public class AuthController {
 
-    private final UserRepository userRepository;
-
-    public AuthController(UserRepository userRepository) {
-        this.userRepository = userRepository;
-    }
+    private final AuthService authService;
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody User user) {
-        if (userRepository.findByEmail(user.email()).isPresent()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Email already used"));
-        }
-        if (userRepository.findByUsername(user.username()).isPresent()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Username already taken"));
-        }
-        User saved = userRepository.save(user);
-        return ResponseEntity.ok(Map.of(
-                "message", "Account created successfully",
-                "user", Map.of("username", saved.username(), "email", saved.email())));
+        var res = authService.register(user);
+        if (res.containsKey("error"))
+            return ResponseEntity.badRequest().body(res);
+        return ResponseEntity.ok(res);
     }
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> credentials) {
-        String username = credentials.get("username");
-        String password = credentials.get("password");
-
-        Optional<User> userOpt = userRepository.findByUsername(username);
-        if (userOpt.isEmpty() || !userOpt.get().password().equals(password)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid username or password"));
-        }
-
-        User user = userOpt.get();
-        return ResponseEntity.ok(Map.of(
-                "message", "Login successful",
-                "user", Map.of(
-                        "username", user.username(),
-                        "email", user.email()
-
-                )));
+        var res = authService.login(credentials);
+        if (res.containsKey("error"))
+            return ResponseEntity.badRequest().body(res);
+        return ResponseEntity.ok(res);
     }
 }

@@ -1,26 +1,33 @@
 package com.restrosync.backend.controller;
 
+import com.restrosync.backend.dto.CreateTableRequest;
+import com.restrosync.backend.dto.UpdateTableRequest;
+import com.restrosync.backend.dto.OccupyTableRequest;
+import com.restrosync.backend.dto.LayoutSaveRequest;
+import com.restrosync.backend.dto.ReserveSeatsRequest;
+import com.restrosync.backend.dto.FreeSeatsRequest;
 import com.restrosync.backend.model.Table;
-import com.restrosync.backend.repository.TableRepository;
+import com.restrosync.backend.service.TableService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/tables")
 @CrossOrigin(origins = "http://localhost:5173")
+@RequiredArgsConstructor
+@Slf4j
 public class TableController {
 
-    private final TableRepository tableRepository;
-
-    public TableController(TableRepository tableRepository) {
-        this.tableRepository = tableRepository;
-    }
+    private final TableService tableService;
 
     // GET all tables
     @GetMapping
     public List<Table> getAllTables() {
-        return tableRepository.findAll();
+        return tableService.getAll();
     }
 
     // ADD new table
@@ -30,11 +37,12 @@ public class TableController {
                 null,
                 request.number(),
                 request.chairs(),
+                0, // Initial reserved seats
                 "available",
                 null,
                 request.x() != null ? request.x() : 50.0,
                 request.y() != null ? request.y() : 50.0);
-        Table saved = tableRepository.save(newTable);
+        Table saved = tableService.create(newTable);
         return ResponseEntity.ok(saved);
     }
 
@@ -44,19 +52,19 @@ public class TableController {
             @PathVariable String id,
             @RequestBody UpdateTableRequest request) {
 
-        return tableRepository.findById(id)
-                .map(existing -> {
-                    Table updated = new Table(
-                            existing.id(),
-                            request.number() != null ? request.number() : existing.number(),
-                            request.chairs() != null ? request.chairs() : existing.chairs(),
-                            existing.status(),
-                            existing.currentOrderId(),
-                            request.x() != null ? request.x() : existing.x(),
-                            request.y() != null ? request.y() : existing.y());
-                    return ResponseEntity.ok(tableRepository.save(updated));
-                })
-                .orElse(ResponseEntity.notFound().build());
+        Table t = new Table(
+                id,
+                request.number(),
+                request.chairs(),
+                null, // Keep existing reserved seats
+                null,
+                null,
+                request.x(),
+                request.y());
+        Table updated = tableService.update(id, t);
+        if (updated == null)
+            return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(updated);
     }
 
     // OCCUPY table (when order is created)
@@ -65,56 +73,53 @@ public class TableController {
             @PathVariable String id,
             @RequestBody OccupyTableRequest request) {
 
-        return tableRepository.findById(id)
-                .map(table -> {
-                    Table occupied = new Table(
-                            table.id(),
-                            table.number(),
-                            table.chairs(),
-                            "occupied",
-                            request.orderId(),
-                            table.x(),
-                            table.y());
-                    return ResponseEntity.ok(tableRepository.save(occupied));
-                })
-                .orElse(ResponseEntity.notFound().build());
+        Table occupied = tableService.occupy(id, request.orderId());
+        if (occupied == null)
+            return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(occupied);
+    }
+
+    // RESERVE specific number of seats
+    @PutMapping("/{id}/reserve")
+    public ResponseEntity<?> reserveSeats(
+            @PathVariable String id,
+            @RequestBody ReserveSeatsRequest request) {
+
+        Table reserved = tableService.reserveSeats(id, request.seatsToReserve());
+        if (reserved == null)
+            return ResponseEntity.badRequest().body("Cannot reserve seats - insufficient capacity");
+        return ResponseEntity.ok(reserved);
+    }
+
+    // FREE specific number of seats
+    @PutMapping("/{id}/free")
+    public ResponseEntity<?> freeSeats(
+            @PathVariable String id,
+            @RequestBody FreeSeatsRequest request) {
+
+        Table freed = tableService.freeSeats(id, request.seatsToFree());
+        if (freed == null)
+            return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(freed);
     }
 
     // This clears a reserved/occupied table when staff clicks it
     @PutMapping("/{id}/clear")
     public ResponseEntity<Table> clearTable(@PathVariable String id) {
-        return tableRepository.findById(id)
-                .map(table -> {
-                    Table cleared = new Table(
-                            table.id(),
-                            table.number(),
-                            table.chairs(),
-                            "available", // ← back to available
-                            null,
-                            table.x(),
-                            table.y());
-                    return ResponseEntity.ok(tableRepository.save(cleared));
-                })
-                .orElse(ResponseEntity.notFound().build());
+        Table cleared = tableService.clear(id);
+        if (cleared == null)
+            return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(cleared);
     }
 
     // SAVE layout positions only (drag & drop)
     @PutMapping("/layout")
     public ResponseEntity<String> saveLayout(@RequestBody LayoutSaveRequest request) {
         try {
-            request.tables().forEach(pos -> {
-                tableRepository.findById(pos.id()).ifPresent(table -> {
-                    Table updated = new Table(
-                            table.id(),
-                            table.number(),
-                            table.chairs(),
-                            table.status(),
-                            table.currentOrderId(),
-                            pos.x(),
-                            pos.y());
-                    tableRepository.save(updated);
-                });
-            });
+            var list = request.tables().stream()
+                    .map(pos -> new Table(pos.id(), null, null, null, null, null, pos.x(), pos.y()))
+                    .toList();
+            tableService.saveLayout(list);
             return ResponseEntity.ok("Layout saved successfully");
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("Failed to save layout");
@@ -124,40 +129,14 @@ public class TableController {
     // DELETE table
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteTable(@PathVariable String id) {
-        if (tableRepository.existsById(id)) {
-            tableRepository.deleteById(id);
-            return ResponseEntity.ok().build();
-        }
-        return ResponseEntity.notFound().build();
+        tableService.delete(id);
+        return ResponseEntity.ok().build();
     }
 
     // INIT sample tables
     @PostMapping("/init")
     public ResponseEntity<String> initSampleTables() {
-        tableRepository.deleteAll();
-        List<Table> samples = List.of(
-                new Table(null, "T1", 4, "available", null, 20.0, 25.0),
-                new Table(null, "T2", 6, "available", null, 50.0, 25.0),
-                new Table(null, "T3", 4, "available", null, 80.0, 25.0),
-                new Table(null, "VIP-1", 8, "available", null, 35.0, 70.0),
-                new Table(null, "VIP-2", 10, "available", null, 65.0, 70.0));
-        tableRepository.saveAll(samples);
+        tableService.initSampleTables();
         return ResponseEntity.ok("Sample tables created");
     }
-}
-
-// === REQUEST DTOs ===
-record CreateTableRequest(String number, Integer chairs, Double x, Double y) {
-}
-
-record UpdateTableRequest(String number, Integer chairs, Double x, Double y) {
-}
-
-record OccupyTableRequest(String orderId) {
-}
-
-record LayoutSaveRequest(List<TablePosition> tables) {
-}
-
-record TablePosition(String id, Double x, Double y) {
 }
