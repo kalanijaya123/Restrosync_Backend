@@ -13,7 +13,6 @@ public class TableMapper {
                 dto.chairs(),
                 dto.reservedSeats() != null ? dto.reservedSeats() : 0,
                 dto.status(),
-                dto.currentOrderId(),
                 dto.x(),
                 dto.y());
     }
@@ -26,7 +25,6 @@ public class TableMapper {
                 .reservedSeats(table.reservedSeats())
                 .remainingSeats(table.remainingSeats())
                 .status(table.status())
-                .currentOrderId(table.currentOrderId())
                 .x(table.x())
                 .y(table.y())
                 .build();

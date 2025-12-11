@@ -11,6 +11,7 @@ public record Order(
     @Id String id,
     Integer orderNo,
     String tableId,
+    
     String source,                    // "dine-in", "takeaway", "delivery"
     List<OrderItem> items,
     Double total,

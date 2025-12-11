@@ -4,11 +4,10 @@ import lombok.Builder;
 
 @Builder
 public record TableCreateDto(
-        String number,
-        Integer chairs,
-        Integer reservedSeats,
-        String status,
-        String currentOrderId,
-        Double x,
-        Double y) {
+                String number,
+                Integer chairs,
+                Integer reservedSeats,
+                String status,
+                Double x,
+                Double y) {
 }

@@ -43,12 +43,25 @@ public class OrderController {
         @PutMapping("/{id}/status")
         public ResponseEntity<Order> updateStatus(@PathVariable String id, @RequestBody Map<String, String> body) {
                 String newStatus = body.get("status");
-                if (!java.util.Set.of("pending", "preparing", "ready", "served", "cancelled").contains(newStatus)) {
+                if (!java.util.Set
+                                .of("payment_pending", "paid_awaiting_kitchen", "pending", "preparing", "ready",
+                                                "served", "cancelled")
+                                .contains(newStatus)) {
                         return ResponseEntity.badRequest().build();
                 }
 
                 Order updated = orderService.updateStatus(id, newStatus);
                 return updated == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(updated);
+        }
+
+        @PutMapping("/{id}/send-to-kitchen")
+        public ResponseEntity<Order> sendToKitchen(@PathVariable String id) {
+                try {
+                        Order sent = orderService.sendToKitchen(id);
+                        return sent == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(sent);
+                } catch (RuntimeException e) {
+                        return ResponseEntity.badRequest().body(null);
+                }
         }
 
         @PutMapping("/{id}/pay")

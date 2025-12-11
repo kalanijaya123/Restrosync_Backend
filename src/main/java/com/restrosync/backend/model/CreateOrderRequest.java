@@ -16,7 +16,8 @@ public record CreateOrderRequest(
                 // Total bill amount (frontend calculated)
                 Double total,
 
-                // Optional: for dine-in
+                // Optional: for dine-in (can send either tableId OR tableNumber)
+                String tableId,     // MongoDB _id of the table
                 String tableNumber, // e.g. "Table 05", "T05", or null for takeaway
 
                 // Required: "dine-in" | "takeaway" | "delivery"

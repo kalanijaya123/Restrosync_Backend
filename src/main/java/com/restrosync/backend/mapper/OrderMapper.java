@@ -37,8 +37,12 @@ public class OrderMapper {
                         .toList() : null,
                 dto.total(),
                 dto.status(),
-                LocalDateTime.now(),
-                LocalDateTime.now(),
+                0.0, // amountPaid
+                0.0, // changeGiven
+                null, // paymentMethod
+                null, // paymentTime
+                LocalDateTime.now(), // createdAt
+                LocalDateTime.now(), // updatedAt
                 dto.servedAt(),
                 dto.paymentStatus(),
                 dto.customerName(),

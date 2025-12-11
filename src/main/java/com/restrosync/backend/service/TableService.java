@@ -32,7 +32,6 @@ public class TableService {
                             t.chairs() != null ? t.chairs() : existing.chairs(),
                             t.reservedSeats() != null ? t.reservedSeats() : existing.reservedSeats(),
                             existing.status(),
-                            existing.currentOrderId(),
                             t.x() != null ? t.x() : existing.x(),
                             t.y() != null ? t.y() : existing.y());
                     return tableRepository.save(updated);
@@ -49,7 +48,6 @@ public class TableService {
                             table.chairs(),
                             table.chairs(), // When occupied, all seats are taken
                             "occupied",
-                            orderId,
                             table.x(),
                             table.y());
                     return tableRepository.save(occupied);
@@ -65,7 +63,6 @@ public class TableService {
                             table.chairs(),
                             0, // Reset reserved seats
                             "available",
-                            null,
                             table.x(),
                             table.y());
                     return tableRepository.save(cleared);
@@ -80,7 +77,6 @@ public class TableService {
                     table.chairs(),
                     table.reservedSeats(),
                     table.status(),
-                    table.currentOrderId(),
                     pos.x(),
                     pos.y());
             tableRepository.save(updated);
@@ -95,11 +91,11 @@ public class TableService {
     public void initSampleTables() {
         tableRepository.deleteAll();
         List<Table> samples = List.of(
-                new Table(null, "T1", 4, 0, "available", null, 20.0, 25.0),
-                new Table(null, "T2", 6, 0, "available", null, 50.0, 25.0),
-                new Table(null, "T3", 4, 0, "available", null, 80.0, 25.0),
-                new Table(null, "VIP-1", 8, 0, "available", null, 35.0, 70.0),
-                new Table(null, "VIP-2", 10, 0, "available", null, 65.0, 70.0));
+                new Table(null, "T1", 4, 0, "available", 20.0, 25.0),
+                new Table(null, "T2", 6, 0, "available", 50.0, 25.0),
+                new Table(null, "T3", 4, 0, "available", 80.0, 25.0),
+                new Table(null, "VIP-1", 8, 0, "available", 35.0, 70.0),
+                new Table(null, "VIP-2", 10, 0, "available", 65.0, 70.0));
         tableRepository.saveAll(samples);
     }
 
@@ -134,7 +130,6 @@ public class TableService {
                             table.chairs(),
                             newReservedSeats,
                             newStatus,
-                            table.currentOrderId(),
                             table.x(),
                             table.y());
 
@@ -169,7 +164,6 @@ public class TableService {
                             table.chairs(),
                             newReservedSeats,
                             newStatus,
-                            newReservedSeats == 0 ? null : table.currentOrderId(), // Clear order if fully free
                             table.x(),
                             table.y());
 

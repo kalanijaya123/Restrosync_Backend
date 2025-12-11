@@ -4,13 +4,12 @@ import lombok.Builder;
 
 @Builder
 public record TableResponseDto(
-        String id,
-        String number,
-        Integer chairs,
-        Integer reservedSeats,
-        Integer remainingSeats,
-        String status,
-        String currentOrderId,
-        Double x,
-        Double y) {
+                String id,
+                String number,
+                Integer chairs,
+                Integer reservedSeats,
+                Integer remainingSeats,
+                String status,
+                Double x,
+                Double y) {
 }

@@ -30,6 +30,16 @@ public class TableController {
         return tableService.getAll();
     }
 
+    // GET single table by ID
+    @GetMapping("/{id}")
+    public ResponseEntity<Table> getTableById(@PathVariable String id) {
+        return tableService.getAll().stream()
+                .filter(t -> t.id().equals(id))
+                .findFirst()
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
     // ADD new table
     @PostMapping
     public ResponseEntity<Table> createTable(@RequestBody CreateTableRequest request) {
@@ -39,7 +49,6 @@ public class TableController {
                 request.chairs(),
                 0, // Initial reserved seats
                 "available",
-                null,
                 request.x() != null ? request.x() : 50.0,
                 request.y() != null ? request.y() : 50.0);
         Table saved = tableService.create(newTable);
@@ -57,7 +66,6 @@ public class TableController {
                 request.number(),
                 request.chairs(),
                 null, // Keep existing reserved seats
-                null,
                 null,
                 request.x(),
                 request.y());
@@ -117,7 +125,7 @@ public class TableController {
     public ResponseEntity<String> saveLayout(@RequestBody LayoutSaveRequest request) {
         try {
             var list = request.tables().stream()
-                    .map(pos -> new Table(pos.id(), null, null, null, null, null, pos.x(), pos.y()))
+                    .map(pos -> new Table(pos.id(), null, null, null, null, pos.x(), pos.y()))
                     .toList();
             tableService.saveLayout(list);
             return ResponseEntity.ok("Layout saved successfully");

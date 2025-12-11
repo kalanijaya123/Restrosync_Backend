@@ -29,7 +29,7 @@ public class OrderService {
     }
 
     // Deduct inventory using per-size recipe quantities
-    private void deductInventory(Order order) {
+    public void deductInventoryForOrder(Order order) {
         order.items().forEach(orderItem -> {
             menuRepository.findById(orderItem.menuItemId()).ifPresent(menuItem -> {
                 if (menuItem.recipe() != null) {
@@ -78,9 +78,20 @@ public class OrderService {
     public Map<String, Object> createOrder(CreateOrderRequest request) {
         int orderNo = nextOrderNo();
 
-        String tableId = null;
-        if (request.tableNumber() != null && !request.tableNumber().trim().isEmpty()) {
+        // Accept either tableId (MongoDB _id) or tableNumber (display name)
+        String tableId = request.tableId(); // Direct MongoDB ID from frontend
+        log.info("Creating order - Received tableId: {}, tableNumber: {}", request.tableId(), request.tableNumber());
+
+        if (tableId == null && request.tableNumber() != null && !request.tableNumber().trim().isEmpty()) {
+            // Fallback: look up by table number
             tableId = tableRepository.findByNumber(request.tableNumber()).map(Table::id).orElse(null);
+            log.info("Looked up tableId by number '{}': {}", request.tableNumber(), tableId);
+        }
+
+        if (tableId != null) {
+            log.info("Order will be created with tableId: {}", tableId);
+        } else {
+            log.warn("No tableId found for order - takeaway/delivery order or table not found");
         }
 
         List<Order.OrderItem> orderItems = new ArrayList<>();
@@ -100,16 +111,26 @@ public class OrderService {
                     0.0, 0.0, 0.0));
         }
 
-        Order order = new Order(null, orderNo, tableId, request.source(), orderItems, request.total(), "pending",
-                LocalDateTime.now(), LocalDateTime.now(), null, "pending", request.customerName(),
-                request.customerPhone(), request.notes(), request.waiterName(), null);
+        Order order = new Order(
+                null, orderNo, tableId, request.source(), orderItems, request.total(),
+                "payment_pending", // status - not visible to kitchen until paid
+                0.0, // amountPaid
+                0.0, // changeGiven
+                null, // paymentMethod
+                null, // paymentTime
+                LocalDateTime.now(), // createdAt
+                LocalDateTime.now(), // updatedAt
+                null, // servedAt
+                "pending", // paymentStatus
+                request.customerName(), request.customerPhone(),
+                request.notes(), request.waiterName(), null);
 
         Order saved = orderRepository.save(order);
-        deductInventory(saved);
+        // Don't deduct inventory yet - wait until payment is completed
 
         if (tableId != null) {
             tableRepository.findById(tableId).ifPresent(t -> tableRepository
-                    .save(new Table(t.id(), t.number(), t.chairs(), t.chairs(), "occupied", saved.id(), t.x(), t.y())));
+                    .save(new Table(t.id(), t.number(), t.chairs(), t.chairs(), "occupied", t.x(), t.y())));
         }
 
         Map<String, Object> res = new HashMap<>();
@@ -130,13 +151,16 @@ public class OrderService {
     }
 
     public Order updateStatus(String id, String newStatus) {
-        if (!Set.of("pending", "preparing", "ready", "served", "cancelled").contains(newStatus)) {
+        if (!Set.of("payment_pending", "paid_awaiting_kitchen", "pending", "preparing", "ready",
+                "served", "cancelled")
+                .contains(newStatus)) {
             throw new IllegalArgumentException("Invalid status");
         }
         return orderRepository.findById(id).map(order -> {
             Order updated = new Order(
                     order.id(), order.orderNo(), order.tableId(), order.source(),
                     order.items(), order.total(), newStatus,
+                    order.amountPaid(), order.changeGiven(), order.paymentMethod(), order.paymentTime(),
                     order.createdAt(), LocalDateTime.now(),
                     newStatus.equals("served") ? LocalDateTime.now() : order.servedAt(),
                     order.paymentStatus(), order.customerName(), order.customerPhone(),
@@ -145,24 +169,56 @@ public class OrderService {
         }).orElse(null);
     }
 
+    public Order sendToKitchen(String id) {
+        return orderRepository.findById(id).map(order -> {
+            // Verify order is paid
+            if (!"paid".equals(order.paymentStatus())) {
+                throw new RuntimeException("Order must be paid before sending to kitchen");
+            }
+
+            // Generate KOT token if not exists
+            String kotToken = order.kotToken();
+            if (kotToken == null || kotToken.isEmpty()) {
+                LocalDate today = LocalDate.now();
+                int kotCount = (int) orderRepository.findAll().stream()
+                        .filter(o -> o.kotToken() != null && o.createdAt() != null
+                                && o.createdAt().toLocalDate().equals(today))
+                        .count() + 1;
+                kotToken = "KOT-" + String.format("%03d", kotCount);
+            }
+
+            Order sentToKitchen = new Order(
+                    order.id(), order.orderNo(), order.tableId(), order.source(),
+                    order.items(), order.total(), "pending",
+                    order.amountPaid(), order.changeGiven(), order.paymentMethod(), order.paymentTime(),
+                    order.createdAt(), LocalDateTime.now(),
+                    order.servedAt(), order.paymentStatus(),
+                    order.customerName(), order.customerPhone(),
+                    order.notes(), order.waiterName(), kotToken);
+
+            Order saved = orderRepository.save(sentToKitchen);
+
+            // Deduct inventory when sent to kitchen
+            deductInventoryForOrder(saved);
+
+            log.info("Order {} sent to kitchen with KOT: {}", order.orderNo(), kotToken);
+            return saved;
+        }).orElse(null);
+    }
+
     public Order payOrder(String id) {
         return orderRepository.findById(id).map(order -> {
             Order paid = new Order(
                     order.id(), order.orderNo(), order.tableId(), order.source(),
-                    order.items(), order.total(), "paid",
+                    order.items(), order.total(), "paid_awaiting_kitchen",
+                    order.total(), 0.0, "cash", LocalDateTime.now(),
                     order.createdAt(), LocalDateTime.now(),
                     order.servedAt(), "paid",
                     order.customerName(), order.customerPhone(),
                     order.notes(), order.waiterName(), order.kotToken());
             Order saved = orderRepository.save(paid);
 
-            // Free table
-            if (order.tableId() != null) {
-                tableRepository.findById(order.tableId())
-                        .ifPresent(t -> tableRepository.save(
-                                new Table(t.id(), t.number(), t.chairs(), 0, "available",
-                                        null, t.x(), t.y())));
-            }
+            // Don't free table yet - wait until order is sent to kitchen
             return saved;
         }).orElse(null);
     }

@@ -10,7 +10,6 @@ public record Table(
                 Integer chairs, // Total number of seats
                 Integer reservedSeats, // Number of seats currently reserved
                 String status, // "available", "occupied", "reserved"
-                String currentOrderId, // Optional: current active order
                 Double x, // Position X (%) on floor plan
                 Double y // Position Y (%) on floor plan
 ) {
