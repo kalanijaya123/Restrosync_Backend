@@ -14,7 +14,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/orders")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = { "http://localhost:5173", "http://localhost:5174" })
 @RequiredArgsConstructor
 @Slf4j
 public class OrderController {
@@ -38,6 +38,11 @@ public class OrderController {
         @GetMapping("/kds")
         public List<Order> getKdsOrders() {
                 return orderService.listKdsOrders();
+        }
+
+        @GetMapping("/recent")
+        public List<Order> getRecentOrders() {
+                return orderService.getRecentOrders();
         }
 
         @PutMapping("/{id}/status")

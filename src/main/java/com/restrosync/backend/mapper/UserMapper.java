@@ -7,7 +7,7 @@ import com.restrosync.backend.model.User;
 public class UserMapper {
 
     public static User toEntity(UserCreateDto dto) {
-        return new User(null, dto.username(), dto.email(), dto.password());
+        return new User(null, dto.username(), dto.email(), dto.password(), dto.role());
     }
 
     public static UserResponseDto toResponseDto(User user) {
@@ -15,6 +15,7 @@ public class UserMapper {
                 .id(user.id())
                 .username(user.username())
                 .email(user.email())
+                .role(user.role())
                 .build();
     }
 }

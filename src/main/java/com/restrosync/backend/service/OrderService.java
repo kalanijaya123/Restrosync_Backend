@@ -150,6 +150,14 @@ public class OrderService {
                 .toList();
     }
 
+    public List<Order> getRecentOrders() {
+        LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(1);
+        return orderRepository.findAll().stream()
+                .filter(o -> o.createdAt() != null && o.createdAt().isAfter(oneHourAgo))
+                .sorted(Comparator.comparing(Order::createdAt).reversed())
+                .toList();
+    }
+
     public Order updateStatus(String id, String newStatus) {
         if (!Set.of("payment_pending", "paid_awaiting_kitchen", "pending", "preparing", "ready",
                 "served", "cancelled")
