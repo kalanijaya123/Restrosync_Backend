@@ -11,10 +11,16 @@ public record Order(
     @Id String id,
     Integer orderNo,
     String tableId,
+    
     String source,                    // "dine-in", "takeaway", "delivery"
     List<OrderItem> items,
     Double total,
-    String status,                    // "pending", "preparing", "ready", "served", "cancelled"
+    String status, 
+          // "pending", "paid", "partially_paid"
+    Double amountPaid,             // e.g., 3000.00 when customer gives 3000
+    Double changeGiven,            // for cash
+    String paymentMethod,          // "cash", "card", "mobile"
+    LocalDateTime paymentTime,                   // "pending", "preparing", "ready", "served", "cancelled"
     LocalDateTime createdAt,
     LocalDateTime updatedAt,
 
