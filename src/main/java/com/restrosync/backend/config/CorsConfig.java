@@ -13,10 +13,14 @@ public class CorsConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        String[] origins = allowedOrigins != null && !allowedOrigins.isEmpty()
+                ? allowedOrigins.split(",")
+                : new String[] { "*" };
+
         registry.addMapping("/api/**")
-                .allowedOrigins(allowedOrigins.split(","))
+                .allowedOrigins(origins)
                 .allowedMethods("*")
                 .allowedHeaders("*")
-                .allowCredentials(true);
+                .allowCredentials(origins[0].equals("*") ? false : true);
     }
 }
