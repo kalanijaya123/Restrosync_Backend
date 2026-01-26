@@ -1,5 +1,7 @@
 package com.restrosync.backend.service;
 
+import com.restrosync.backend.dto.OrderResponseDto;
+import com.restrosync.backend.mapper.OrderMapper;
 import com.restrosync.backend.model.*;
 import com.restrosync.backend.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,7 @@ public class OrderService {
     private final TableRepository tableRepository;
     private final MenuRepository menuRepository;
     private final InventoryRepository inventoryRepository;
+    private final OrderMapper orderMapper;
 
     private int nextOrderNo() {
         LocalDate today = LocalDate.now();
@@ -139,26 +142,31 @@ public class OrderService {
         return res;
     }
 
-    public List<Order> listAllOrders() {
-        return orderRepository.findAll().stream().sorted(Comparator.comparing(Order::createdAt).reversed()).toList();
-    }
-
-    public List<Order> listKdsOrders() {
+    public List<OrderResponseDto> listAllOrders() {
         return orderRepository.findAll().stream()
-                .filter(o -> Set.of("pending", "preparing", "ready").contains(o.status()))
-                .sorted(Comparator.comparing(Order::createdAt))
+                .sorted(Comparator.comparing(Order::createdAt).reversed())
+                .map(orderMapper::toResponseDto)
                 .toList();
     }
 
-    public List<Order> getRecentOrders() {
+    public List<OrderResponseDto> listKdsOrders() {
+        return orderRepository.findAll().stream()
+                .filter(o -> Set.of("pending", "preparing", "ready").contains(o.status()))
+                .sorted(Comparator.comparing(Order::createdAt))
+                .map(orderMapper::toResponseDto)
+                .toList();
+    }
+
+    public List<OrderResponseDto> getRecentOrders() {
         LocalDateTime oneHourAgo = LocalDateTime.now().minusHours(1);
         return orderRepository.findAll().stream()
                 .filter(o -> o.createdAt() != null && o.createdAt().isAfter(oneHourAgo))
                 .sorted(Comparator.comparing(Order::createdAt).reversed())
+                .map(orderMapper::toResponseDto)
                 .toList();
     }
 
-    public Order updateStatus(String id, String newStatus) {
+    public OrderResponseDto updateStatus(String id, String newStatus) {
         if (!Set.of("payment_pending", "paid_awaiting_kitchen", "pending", "preparing", "ready",
                 "served", "cancelled")
                 .contains(newStatus)) {
@@ -173,11 +181,12 @@ public class OrderService {
                     newStatus.equals("served") ? LocalDateTime.now() : order.servedAt(),
                     order.paymentStatus(), order.customerName(), order.customerPhone(),
                     order.notes(), order.waiterName(), order.kotToken());
-            return orderRepository.save(updated);
+            Order saved = orderRepository.save(updated);
+            return orderMapper.toResponseDto(saved);
         }).orElse(null);
     }
 
-    public Order sendToKitchen(String id) {
+    public OrderResponseDto sendToKitchen(String id) {
         return orderRepository.findById(id).map(order -> {
             // Verify order is paid
             if (!"paid".equals(order.paymentStatus())) {
@@ -210,11 +219,11 @@ public class OrderService {
             deductInventoryForOrder(saved);
 
             log.info("Order {} sent to kitchen with KOT: {}", order.orderNo(), kotToken);
-            return saved;
+            return orderMapper.toResponseDto(saved);
         }).orElse(null);
     }
 
-    public Order payOrder(String id) {
+    public OrderResponseDto payOrder(String id) {
         return orderRepository.findById(id).map(order -> {
             Order paid = new Order(
                     order.id(), order.orderNo(), order.tableId(), order.source(),
@@ -227,7 +236,7 @@ public class OrderService {
             Order saved = orderRepository.save(paid);
 
             // Don't free table yet - wait until order is sent to kitchen
-            return saved;
+            return orderMapper.toResponseDto(saved);
         }).orElse(null);
     }
 }

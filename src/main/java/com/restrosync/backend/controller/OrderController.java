@@ -1,6 +1,7 @@
 // src/main/java/com/restrosync/backend/controller/OrderController.java
 package com.restrosync.backend.controller;
 
+import com.restrosync.backend.dto.OrderResponseDto;
 import com.restrosync.backend.model.CreateOrderRequest;
 import com.restrosync.backend.model.Order;
 import com.restrosync.backend.service.OrderService;
@@ -31,22 +32,23 @@ public class OrderController {
         }
 
         @GetMapping
-        public List<Order> getAllOrders() {
+        public List<OrderResponseDto> getAllOrders() {
                 return orderService.listAllOrders();
         }
 
         @GetMapping("/kds")
-        public List<Order> getKdsOrders() {
+        public List<OrderResponseDto> getKdsOrders() {
                 return orderService.listKdsOrders();
         }
 
         @GetMapping("/recent")
-        public List<Order> getRecentOrders() {
+        public List<OrderResponseDto> getRecentOrders() {
                 return orderService.getRecentOrders();
         }
 
         @PutMapping("/{id}/status")
-        public ResponseEntity<Order> updateStatus(@PathVariable String id, @RequestBody Map<String, String> body) {
+        public ResponseEntity<OrderResponseDto> updateStatus(@PathVariable String id,
+                        @RequestBody Map<String, String> body) {
                 String newStatus = body.get("status");
                 if (!java.util.Set
                                 .of("payment_pending", "paid_awaiting_kitchen", "pending", "preparing", "ready",
@@ -55,14 +57,14 @@ public class OrderController {
                         return ResponseEntity.badRequest().build();
                 }
 
-                Order updated = orderService.updateStatus(id, newStatus);
+                OrderResponseDto updated = orderService.updateStatus(id, newStatus);
                 return updated == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(updated);
         }
 
         @PutMapping("/{id}/send-to-kitchen")
-        public ResponseEntity<Order> sendToKitchen(@PathVariable String id) {
+        public ResponseEntity<OrderResponseDto> sendToKitchen(@PathVariable String id) {
                 try {
-                        Order sent = orderService.sendToKitchen(id);
+                        OrderResponseDto sent = orderService.sendToKitchen(id);
                         return sent == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(sent);
                 } catch (RuntimeException e) {
                         return ResponseEntity.badRequest().body(null);
@@ -70,8 +72,8 @@ public class OrderController {
         }
 
         @PutMapping("/{id}/pay")
-        public ResponseEntity<Order> payOrder(@PathVariable String id) {
-                Order saved = orderService.payOrder(id);
+        public ResponseEntity<OrderResponseDto> payOrder(@PathVariable String id) {
+                OrderResponseDto saved = orderService.payOrder(id);
                 return saved == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(saved);
         }
 }
