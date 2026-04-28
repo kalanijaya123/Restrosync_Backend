@@ -33,9 +33,13 @@ public class OrderService {
 
     // Deduct inventory using per-size recipe quantities
     public void deductInventoryForOrder(Order order) {
+        log.info("🔴 DEDUCTING INVENTORY for Order #{} with {} items", order.orderNo(), order.items().size());
         order.items().forEach(orderItem -> {
+            log.info("  → Processing item: {} (size: {}, qty: {})", orderItem.menuItemName(), orderItem.sizeName(),
+                    orderItem.qty());
             menuRepository.findById(orderItem.menuItemId()).ifPresent(menuItem -> {
                 if (menuItem.recipe() != null) {
+                    log.info("    Recipe found with {} ingredients", menuItem.recipe().size());
                     menuItem.recipe().forEach(recipe -> {
                         double qtyPerUnit = 0.0;
                         var quantitiesMap = recipe.quantities();
@@ -46,17 +50,25 @@ public class OrderService {
                                             quantitiesMap.values().stream().findFirst().orElse(0.0)));
                         }
                         double totalDeduct = qtyPerUnit * orderItem.qty();
+                        log.info("    Deducting {} {} from {} (qty per unit: {})", totalDeduct, recipe.ingredientName(),
+                                recipe.ingredientName(), qtyPerUnit);
                         inventoryRepository.findById(recipe.ingredientId()).ifPresent(inv -> {
+                            double oldStock = inv.currentStock();
                             double newStock = Math.max(0, inv.currentStock() - totalDeduct);
                             inventoryRepository.save(inv.withStock(newStock));
+                            log.info("    ✅ Updated inventory: {} {} → {} {}", inv.name(), oldStock, newStock,
+                                    inv.unit());
                             if (newStock <= inv.lowStockAlert()) {
-                                log.warn("LOW STOCK ALERT: {} → {} {}", inv.name(), newStock, inv.unit());
+                                log.warn("    ⚠️ LOW STOCK ALERT: {} → {} {}", inv.name(), newStock, inv.unit());
                             }
                         });
                     });
+                } else {
+                    log.warn("    ⚠️ NO RECIPE found for menu item: {}", menuItem.name());
                 }
 
                 if (menuItem.extras() != null && orderItem.extras() != null) {
+                    log.info("    Processing {} extras for this item", orderItem.extras().size());
                     orderItem.extras().forEach(selectedExtra -> {
                         menuItem.extras().stream()
                                 .filter(extra -> extra.id().equals(selectedExtra.extraId()))
@@ -64,11 +76,15 @@ public class OrderService {
                                 .ifPresent(extra -> {
                                     double deductExtra = extra.quantityPerUnit() * selectedExtra.qty()
                                             * orderItem.qty();
+                                    log.info("    Deducting {} from extra: {}", deductExtra, selectedExtra.name());
                                     inventoryRepository.findById(extra.ingredientId()).ifPresent(inv -> {
+                                        double oldStock = inv.currentStock();
                                         double newStock = Math.max(0, inv.currentStock() - deductExtra);
                                         inventoryRepository.save(inv.withStock(newStock));
+                                        log.info("    ✅ Updated inventory (extra): {} {} → {} {}", inv.name(), oldStock,
+                                                newStock, inv.unit());
                                         if (newStock <= inv.lowStockAlert()) {
-                                            log.warn("LOW STOCK (EXTRA): {} → {}", inv.name(), newStock);
+                                            log.warn("    ⚠️ LOW STOCK (EXTRA): {} → {}", inv.name(), newStock);
                                         }
                                     });
                                 });
@@ -76,6 +92,7 @@ public class OrderService {
                 }
             });
         });
+        log.info("🔴 INVENTORY DEDUCTION COMPLETED for Order #{}", order.orderNo());
     }
 
     public Map<String, Object> createOrder(CreateOrderRequest request) {
@@ -187,9 +204,13 @@ public class OrderService {
     }
 
     public OrderResponseDto sendToKitchen(String id) {
+        log.info("🍳 SEND TO KITCHEN called for order ID: {}", id);
         return orderRepository.findById(id).map(order -> {
+            log.info("  Order found: #{} (paymentStatus: {})", order.orderNo(), order.paymentStatus());
             // Verify order is paid
             if (!"paid".equals(order.paymentStatus())) {
+                log.error("  ❌ Order must be paid before sending to kitchen. Current status: {}",
+                        order.paymentStatus());
                 throw new RuntimeException("Order must be paid before sending to kitchen");
             }
 
@@ -236,6 +257,72 @@ public class OrderService {
             Order saved = orderRepository.save(paid);
 
             // Don't free table yet - wait until order is sent to kitchen
+            return orderMapper.toResponseDto(saved);
+        }).orElse(null);
+    }
+
+    /**
+     * Add items to an existing order (for orders in "pending" or "ready" status)
+     * Recalculates the total and updates inventory if order is already at kitchen
+     */
+    public OrderResponseDto addItemsToOrder(String id, AddItemsRequest request) {
+        log.info("➕ ADD ITEMS TO ORDER called for order ID: {}", id);
+        return orderRepository.findById(id).map(order -> {
+            // Verify order is in a valid state for adding items
+            if (!Set.of("pending", "preparing", "ready").contains(order.status())) {
+                log.error("❌ Cannot add items to order in status: {}", order.status());
+                throw new RuntimeException("Can only add items to orders that are pending, preparing, or ready");
+            }
+
+            // Create order items for new additions
+            List<Order.OrderItem> newOrderItems = new ArrayList<>();
+            for (CreateOrderRequest.OrderItemReq i : request.items()) {
+                MenuItem menu = menuRepository.findById(i.menuItemId()).orElse(null);
+                String itemName = menu != null ? menu.name() : "Unknown";
+                List<Order.SelectedExtra> extras = i.extras() == null ? List.of() : i.extras().stream().map(se -> {
+                    MenuItem.ExtraItem extra = menu != null
+                            ? menu.extras().stream().filter(e -> e.id().equals(se.extraId())).findFirst().orElse(null)
+                            : null;
+                    return new Order.SelectedExtra(se.extraId(), extra != null ? extra.name() : "Unknown",
+                            extra != null ? extra.price() : 0.0, se.qty(),
+                            extra != null ? extra.quantityPerUnit() : 0.0,
+                            extra != null ? extra.ingredientId() : null);
+                }).toList();
+
+                newOrderItems.add(
+                        new Order.OrderItem(i.menuItemId(), itemName, i.sizeName(), i.price(), i.qty(), extras, 0.0,
+                                0.0, 0.0, 0.0));
+            }
+
+            // Merge new items with existing items
+            List<Order.OrderItem> mergedItems = new ArrayList<>(order.items());
+            mergedItems.addAll(newOrderItems);
+
+            // Calculate new total
+            double newTotal = order.total() + request.additionalTotal();
+
+            // Create updated order
+            Order updated = new Order(
+                    order.id(), order.orderNo(), order.tableId(), order.source(),
+                    mergedItems, newTotal, order.status(),
+                    order.amountPaid(), order.changeGiven(), order.paymentMethod(), order.paymentTime(),
+                    order.createdAt(), LocalDateTime.now(),
+                    order.servedAt(), order.paymentStatus(),
+                    order.customerName(), order.customerPhone(),
+                    order.notes(), order.waiterName(), order.kotToken());
+
+            Order saved = orderRepository.save(updated);
+
+            // If order is already in kitchen (pending/preparing/ready), deduct inventory
+            // for new items only
+            if (Set.of("pending", "preparing", "ready").contains(order.status())) {
+                log.info("Order already in kitchen, deducting inventory for {} new items", newOrderItems.size());
+                Order tempOrder = new Order(null, null, null, null, newOrderItems, 0.0, null, 0.0, 0.0, null, null,
+                        null, null, null, null, null, null, null, null, null);
+                deductInventoryForOrder(tempOrder);
+            }
+
+            log.info("✅ Items added to order #{}, new total: {}", order.orderNo(), newTotal);
             return orderMapper.toResponseDto(saved);
         }).orElse(null);
     }

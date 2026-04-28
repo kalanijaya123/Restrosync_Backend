@@ -3,6 +3,7 @@ package com.restrosync.backend.controller;
 
 import com.restrosync.backend.dto.OrderResponseDto;
 import com.restrosync.backend.model.CreateOrderRequest;
+import com.restrosync.backend.model.AddItemsRequest;
 import com.restrosync.backend.model.Order;
 import com.restrosync.backend.service.OrderService;
 import lombok.RequiredArgsConstructor;
@@ -75,5 +76,20 @@ public class OrderController {
         public ResponseEntity<OrderResponseDto> payOrder(@PathVariable String id) {
                 OrderResponseDto saved = orderService.payOrder(id);
                 return saved == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(saved);
+        }
+
+        @PutMapping("/{id}/add-items")
+        public ResponseEntity<OrderResponseDto> addItemsToOrder(
+                        @PathVariable String id,
+                        @RequestBody AddItemsRequest request) {
+                try {
+                        if (request == null || request.items() == null || request.items().isEmpty()) {
+                                return ResponseEntity.badRequest().body(null);
+                        }
+                        OrderResponseDto updated = orderService.addItemsToOrder(id, request);
+                        return updated == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(updated);
+                } catch (RuntimeException e) {
+                        return ResponseEntity.badRequest().body(null);
+                }
         }
 }
