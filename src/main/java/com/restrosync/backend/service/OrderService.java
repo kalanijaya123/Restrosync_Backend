@@ -100,12 +100,17 @@ public class OrderService {
 
         // Accept either tableId (MongoDB _id) or tableNumber (display name)
         String tableId = request.tableId(); // Direct MongoDB ID from frontend
+        String tableNumber = request.tableNumber();
         log.info("Creating order - Received tableId: {}, tableNumber: {}", request.tableId(), request.tableNumber());
 
         if (tableId == null && request.tableNumber() != null && !request.tableNumber().trim().isEmpty()) {
             // Fallback: look up by table number
             tableId = tableRepository.findByNumber(request.tableNumber()).map(Table::id).orElse(null);
             log.info("Looked up tableId by number '{}': {}", request.tableNumber(), tableId);
+        }
+
+        if ((tableNumber == null || tableNumber.trim().isEmpty()) && tableId != null) {
+            tableNumber = tableRepository.findById(tableId).map(Table::number).orElse(null);
         }
 
         if (tableId != null) {
@@ -132,7 +137,7 @@ public class OrderService {
         }
 
         Order order = new Order(
-                null, orderNo, tableId, request.source(), orderItems, request.total(),
+                null, orderNo, tableId, tableNumber, request.source(), orderItems, request.total(),
                 "payment_pending", // status - not visible to kitchen until paid
                 0.0, // amountPaid
                 0.0, // changeGiven
@@ -191,7 +196,7 @@ public class OrderService {
         }
         return orderRepository.findById(id).map(order -> {
             Order updated = new Order(
-                    order.id(), order.orderNo(), order.tableId(), order.source(),
+                    order.id(), order.orderNo(), order.tableId(), order.tableNumber(), order.source(),
                     order.items(), order.total(), newStatus,
                     order.amountPaid(), order.changeGiven(), order.paymentMethod(), order.paymentTime(),
                     order.createdAt(), LocalDateTime.now(),
@@ -226,7 +231,7 @@ public class OrderService {
             }
 
             Order sentToKitchen = new Order(
-                    order.id(), order.orderNo(), order.tableId(), order.source(),
+                    order.id(), order.orderNo(), order.tableId(), order.tableNumber(), order.source(),
                     order.items(), order.total(), "pending",
                     order.amountPaid(), order.changeGiven(), order.paymentMethod(), order.paymentTime(),
                     order.createdAt(), LocalDateTime.now(),
@@ -247,7 +252,7 @@ public class OrderService {
     public OrderResponseDto payOrder(String id) {
         return orderRepository.findById(id).map(order -> {
             Order paid = new Order(
-                    order.id(), order.orderNo(), order.tableId(), order.source(),
+                    order.id(), order.orderNo(), order.tableId(), order.tableNumber(), order.source(),
                     order.items(), order.total(), "paid_awaiting_kitchen",
                     order.total(), 0.0, "cash", LocalDateTime.now(),
                     order.createdAt(), LocalDateTime.now(),
@@ -303,7 +308,7 @@ public class OrderService {
 
             // Create updated order
             Order updated = new Order(
-                    order.id(), order.orderNo(), order.tableId(), order.source(),
+                    order.id(), order.orderNo(), order.tableId(), order.tableNumber(), order.source(),
                     mergedItems, newTotal, order.status(),
                     order.amountPaid(), order.changeGiven(), order.paymentMethod(), order.paymentTime(),
                     order.createdAt(), LocalDateTime.now(),
@@ -317,7 +322,8 @@ public class OrderService {
             // for new items only
             if (Set.of("pending", "preparing", "ready").contains(order.status())) {
                 log.info("Order already in kitchen, deducting inventory for {} new items", newOrderItems.size());
-                Order tempOrder = new Order(null, null, null, null, newOrderItems, 0.0, null, 0.0, 0.0, null, null,
+                Order tempOrder = new Order(null, null, null, null, null, newOrderItems, 0.0, null, 0.0, 0.0, null,
+                        null,
                         null, null, null, null, null, null, null, null, null);
                 deductInventoryForOrder(tempOrder);
             }

@@ -10,6 +10,7 @@ public record OrderResponseDto(
                 String id,
                 Integer orderNo,
                 String tableId,
+                String tableNumber,
                 String source,
                 List<OrderItemDto> items,
                 Double total,

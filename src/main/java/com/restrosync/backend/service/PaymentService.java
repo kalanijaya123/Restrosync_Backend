@@ -46,6 +46,7 @@ public class PaymentService {
                 order.id(),
                 order.orderNo(),
                 order.tableId(),
+                order.tableNumber(),
                 order.source(),
                 order.items(),
                 order.total(),

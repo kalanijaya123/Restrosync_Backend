@@ -4,7 +4,7 @@ import com.restrosync.backend.model.User;
 import com.restrosync.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -15,7 +15,7 @@ import java.util.Map;
 public class AuthService {
 
     private final UserRepository userRepository;
-    private final BCryptPasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
 
     public Map<String, Object> register(User user) {
         if (userRepository.findByEmail(user.email()).isPresent()) {

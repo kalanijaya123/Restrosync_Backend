@@ -17,7 +17,8 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/menu")
-@CrossOrigin(origins = { "http://localhost:5173", "http://localhost:5174", "https://your-project.vercel.app" })
+@CrossOrigin(origins = { "http://localhost:5173", "http://localhost:5174", "http://localhost:5175",
+        "https://your-project.vercel.app" })
 @RequiredArgsConstructor
 @Slf4j
 public class MenuController {

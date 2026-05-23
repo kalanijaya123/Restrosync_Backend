@@ -4,7 +4,9 @@ import com.restrosync.backend.dto.OrderCreateDto;
 import com.restrosync.backend.dto.OrderResponseDto;
 import com.restrosync.backend.model.MenuItem;
 import com.restrosync.backend.model.Order;
+import com.restrosync.backend.model.Table;
 import com.restrosync.backend.repository.MenuRepository;
+import com.restrosync.backend.repository.TableRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -15,12 +17,14 @@ import java.time.LocalDateTime;
 public class OrderMapper {
 
         private final MenuRepository menuRepository;
+        private final TableRepository tableRepository;
 
         public Order toEntity(OrderCreateDto dto) {
                 return new Order(
                                 null,
                                 dto.orderNo(),
                                 dto.tableId(),
+                                dto.tableNumber(),
                                 dto.source(),
                                 dto.items() != null ? dto.items().stream()
                                                 .map(i -> new Order.OrderItem(
@@ -65,6 +69,12 @@ public class OrderMapper {
                                 .id(order.id())
                                 .orderNo(order.orderNo())
                                 .tableId(order.tableId())
+                                .tableNumber(order.tableNumber() != null ? order.tableNumber()
+                                                : (order.tableId() != null
+                                                                ? tableRepository.findById(order.tableId())
+                                                                                .map(Table::number)
+                                                                                .orElse(order.tableId())
+                                                                : null))
                                 .source(order.source())
                                 .items(order.items() != null ? order.items().stream()
                                                 .map(i -> {

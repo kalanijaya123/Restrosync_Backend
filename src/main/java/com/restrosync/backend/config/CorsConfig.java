@@ -3,6 +3,7 @@ package com.restrosync.backend.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.CorsRegistration;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration
@@ -17,10 +18,15 @@ public class CorsConfig implements WebMvcConfigurer {
                 ? allowedOrigins.split(",")
                 : new String[] { "*" };
 
-        registry.addMapping("/api/**")
-                .allowedOrigins(origins)
+        CorsRegistration mapping = registry.addMapping("/api/**")
                 .allowedMethods("*")
-                .allowedHeaders("*")
-                .allowCredentials(origins[0].equals("*") ? false : true);
+                .allowedHeaders("*");
+
+        boolean allowAnyOrigin = origins.length == 1 && "*".equals(origins[0]);
+        if (allowAnyOrigin) {
+            mapping.allowedOrigins("*").allowCredentials(false);
+        } else {
+            mapping.allowedOriginPatterns(origins).allowCredentials(true);
+        }
     }
 }
