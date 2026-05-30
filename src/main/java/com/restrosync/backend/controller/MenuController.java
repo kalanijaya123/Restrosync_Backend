@@ -52,10 +52,11 @@ public class MenuController {
             @RequestParam(value = "sizes", required = false) String sizesJson,
             @RequestParam(value = "recipe", required = false, defaultValue = "[]") String recipeJson,
             @RequestParam(value = "extras", required = false, defaultValue = "[]") String extrasJson,
+            @RequestParam(value = "mealPeriods", required = false) String mealPeriodsJson,
             @RequestParam(value = "media", required = false) MultipartFile media) {
         try {
             MenuItem saved = menuService.createMenuItem(payload, name, category, sizesJson, recipeJson, extrasJson,
-                    media);
+                    mealPeriodsJson, media);
             return ResponseEntity.ok(saved);
         } catch (Exception e) {
             log.error("Failed to create menu item", e);
@@ -100,10 +101,11 @@ public class MenuController {
             @RequestParam(value = "sizes", required = false) String sizesJson,
             @RequestParam(value = "recipe", required = false) String recipeJson,
             @RequestParam(value = "extras", required = false) String extrasJson,
+            @RequestParam(value = "mealPeriods", required = false) String mealPeriodsJson,
             @RequestParam(value = "media", required = false) MultipartFile media) {
         try {
             MenuItem updated = menuService.updateMenuItem(id, payload, name, category, sizesJson, recipeJson,
-                    extrasJson, media);
+                    extrasJson, mealPeriodsJson, media);
             return updated == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(updated);
         } catch (Exception e) {
             log.error("Failed to update menu item", e);

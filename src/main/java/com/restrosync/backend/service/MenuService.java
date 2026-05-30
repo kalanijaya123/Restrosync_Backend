@@ -26,12 +26,35 @@ public class MenuService {
     private final MenuRepository menuRepository;
     private final Cloudinary cloudinary;
     private static final Path UPLOAD_DIR = Paths.get("uploads", "menu");
+    private static final List<String> DEFAULT_MEAL_PERIODS = List.of("Breakfast", "Lunch", "Dinner");
+
+    private List<String> normalizeMealPeriods(List<String> mealPeriods) {
+        if (mealPeriods == null || mealPeriods.isEmpty()) {
+            return DEFAULT_MEAL_PERIODS;
+        }
+
+        List<String> cleaned = mealPeriods.stream()
+                .filter(period -> period != null && !period.isBlank())
+                .map(String::trim)
+                .filter(period -> period.equalsIgnoreCase("All Day")
+                        || DEFAULT_MEAL_PERIODS.stream().anyMatch(p -> p.equalsIgnoreCase(period)))
+                .distinct()
+                .toList();
+
+        if (cleaned.isEmpty() || cleaned.stream().anyMatch(period -> period.equalsIgnoreCase("All Day"))) {
+            return DEFAULT_MEAL_PERIODS;
+        }
+
+        return DEFAULT_MEAL_PERIODS.stream()
+                .filter(period -> cleaned.stream().anyMatch(selected -> selected.equalsIgnoreCase(period)))
+                .toList();
+    }
 
     public MenuItem createMenuItem(String payload, String name, String category, String sizesJson,
-            String recipeJson, String extrasJson, MultipartFile media) {
+            String recipeJson, String extrasJson, String mealPeriodsJson, MultipartFile media) {
         log.info(
-                "Creating menu item - payload: {}, name: {}, category: {}, sizesJson: {}, recipeJson: {}, extrasJson: {}, media: {}",
-                payload, name, category, sizesJson, recipeJson, extrasJson,
+                "Creating menu item - payload: {}, name: {}, category: {}, sizesJson: {}, recipeJson: {}, extrasJson: {}, mealPeriodsJson: {}, media: {}",
+                payload, name, category, sizesJson, recipeJson, extrasJson, mealPeriodsJson,
                 media != null ? media.getOriginalFilename() : "null");
 
         try {
@@ -48,6 +71,7 @@ public class MenuService {
             String finalSizesJson = sizesJson;
             String finalRecipeJson = recipeJson;
             String finalExtrasJson = extrasJson;
+            List<String> finalMealPeriods = DEFAULT_MEAL_PERIODS;
 
             if (payload != null && !payload.isBlank()) {
                 var root = mapper.readTree(payload);
@@ -55,6 +79,10 @@ public class MenuService {
                     finalName = root.path("name").asText(null);
                 if (finalCategory == null)
                     finalCategory = root.path("category").asText(null);
+                if (root.has("mealPeriods")) {
+                    finalMealPeriods = mapper.convertValue(root.get("mealPeriods"), new TypeReference<List<String>>() {
+                    });
+                }
                 if ((finalSizesJson == null || finalSizesJson.isBlank()) && root.has("sizes")) {
                     finalSizesJson = mapper.writeValueAsString(root.get("sizes"));
                 }
@@ -64,6 +92,11 @@ public class MenuService {
                 if ((finalExtrasJson == null || finalExtrasJson.isBlank()) && root.has("extras")) {
                     finalExtrasJson = mapper.writeValueAsString(root.get("extras"));
                 }
+            }
+
+            if (mealPeriodsJson != null && !mealPeriodsJson.isBlank()) {
+                finalMealPeriods = mapper.readValue(mealPeriodsJson, new TypeReference<List<String>>() {
+                });
             }
 
             String imageUrl = null;
@@ -93,7 +126,7 @@ public class MenuService {
                     });
 
             MenuItem item = new MenuItem(null, finalName, finalCategory, null, sizes, true, imageUrl, recipeList,
-                    extrasList);
+                    extrasList, normalizeMealPeriods(finalMealPeriods));
             return menuRepository.save(item);
         } catch (Exception e) {
             log.error("Failed to create menu item", e);
@@ -114,7 +147,8 @@ public class MenuService {
                     menuItem.available() != null ? menuItem.available() : true,
                     menuItem.mediaUrl(),
                     menuItem.recipe() != null ? menuItem.recipe() : List.of(),
-                    menuItem.extras() != null ? menuItem.extras() : List.of());
+                    menuItem.extras() != null ? menuItem.extras() : List.of(),
+                    normalizeMealPeriods(menuItem.mealPeriods()));
             log.info("MenuItem before save - mediaUrl: {}", item.mediaUrl());
             MenuItem saved = menuRepository.save(item);
             log.info("MenuItem after save - ID: {}, mediaUrl: {}", saved.id(), saved.mediaUrl());
@@ -137,7 +171,9 @@ public class MenuService {
                     menuItem.available() != null ? menuItem.available() : existingItem.available(),
                     menuItem.mediaUrl() != null ? menuItem.mediaUrl() : existingItem.mediaUrl(),
                     menuItem.recipe() != null ? menuItem.recipe() : existingItem.recipe(),
-                    menuItem.extras() != null ? menuItem.extras() : existingItem.extras());
+                    menuItem.extras() != null ? menuItem.extras() : existingItem.extras(),
+                    normalizeMealPeriods(
+                            menuItem.mealPeriods() != null ? menuItem.mealPeriods() : existingItem.mealPeriods()));
             log.info("Updated MenuItem - mediaUrl: {}", updated.mediaUrl());
             return menuRepository.save(updated);
         }).orElse(null);
@@ -162,13 +198,14 @@ public class MenuService {
         return menuRepository.findById(id).map(item -> {
             MenuItem updated = new MenuItem(
                     item.id(), item.name(), item.category(), item.price(),
-                    item.sizes(), !item.available(), item.mediaUrl(), item.recipe(), item.extras());
+                    item.sizes(), !item.available(), item.mediaUrl(), item.recipe(), item.extras(),
+                    item.mealPeriods());
             return menuRepository.save(updated);
         }).orElse(null);
     }
 
     public MenuItem updateMenuItem(String id, String payload, String name, String category, String sizesJson,
-            String recipeJson, String extrasJson, MultipartFile media) {
+            String recipeJson, String extrasJson, String mealPeriodsJson, MultipartFile media) {
         return menuRepository.findById(id).map(existingItem -> {
             try {
                 ObjectMapper mapper = new ObjectMapper();
@@ -178,6 +215,7 @@ public class MenuService {
                 String finalSizesJson = sizesJson;
                 String finalRecipeJson = recipeJson;
                 String finalExtrasJson = extrasJson;
+                List<String> finalMealPeriods = existingItem.mealPeriods();
 
                 if (payload != null && !payload.isBlank()) {
                     var root = mapper.readTree(payload);
@@ -185,6 +223,11 @@ public class MenuService {
                         finalName = root.path("name").asText(finalName);
                     if (category == null && root.has("category"))
                         finalCategory = root.path("category").asText(finalCategory);
+                    if (root.has("mealPeriods")) {
+                        finalMealPeriods = mapper.convertValue(root.get("mealPeriods"),
+                                new TypeReference<List<String>>() {
+                                });
+                    }
                     if ((finalSizesJson == null || finalSizesJson.isBlank()) && root.has("sizes")) {
                         finalSizesJson = mapper.writeValueAsString(root.get("sizes"));
                     }
@@ -194,6 +237,11 @@ public class MenuService {
                     if ((finalExtrasJson == null || finalExtrasJson.isBlank()) && root.has("extras")) {
                         finalExtrasJson = mapper.writeValueAsString(root.get("extras"));
                     }
+                }
+
+                if (mealPeriodsJson != null && !mealPeriodsJson.isBlank()) {
+                    finalMealPeriods = mapper.readValue(mealPeriodsJson, new TypeReference<List<String>>() {
+                    });
                 }
 
                 String imageUrl = existingItem.mediaUrl();
@@ -223,7 +271,8 @@ public class MenuService {
                         });
 
                 MenuItem updated = new MenuItem(id, finalName, finalCategory, existingItem.price(), sizes,
-                        existingItem.available(), imageUrl, recipeList, extrasList);
+                        existingItem.available(), imageUrl, recipeList, extrasList,
+                        normalizeMealPeriods(finalMealPeriods));
                 return menuRepository.save(updated);
             } catch (Exception e) {
                 log.error("Failed to update menu item", e);
