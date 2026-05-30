@@ -71,4 +71,13 @@ public class OnlineOrderController {
         onlineOrderService.updateOrderStatus(orderId, status);
         return ResponseEntity.ok("Order status updated to: " + status);
     }
+
+    /**
+     * Accept an online order and immediately push it into the kitchen queue.
+     */
+    @PutMapping("/{orderId}/accept")
+    public ResponseEntity<String> acceptOrder(@PathVariable String orderId) {
+        onlineOrderService.acceptOrderForKitchen(orderId);
+        return ResponseEntity.ok("Order accepted and sent to kitchen");
+    }
 }

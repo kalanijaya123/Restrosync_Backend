@@ -2,6 +2,7 @@ package com.restrosync.backend.service;
 
 import com.restrosync.backend.model.OnlineOrder;
 import com.restrosync.backend.model.Order;
+import com.restrosync.backend.repository.OrderRepository;
 import com.restrosync.backend.repository.OnlineOrderRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import java.util.UUID;
 public class OnlineOrderService {
 
     private final OnlineOrderRepository onlineOrderRepository;
+    private final OrderRepository orderRepository;
 
     /**
      * Create new online order (Requirement 4.7)
@@ -44,8 +46,13 @@ public class OnlineOrderService {
                 order.tax(),
                 order.total(),
                 "pending_payment", // Initial status
-                "pending", // Payment status
+                order.paymentStatus() != null ? order.paymentStatus()
+                        : "card".equalsIgnoreCase(order.paymentMethod()) ? "paid" : "pending", // Payment status
                 order.paymentMethod(),
+                order.cardHolderName(),
+                order.cardLast4(),
+                order.cardExpiry(),
+                order.cardTransactionRef(),
                 LocalDateTime.now(),
                 LocalDateTime.now().plusHours(30), // Expected delivery in 30 mins for now
                 null,
@@ -76,6 +83,9 @@ public class OnlineOrderService {
      */
     public void updateOrderStatus(String orderId, String newStatus) {
         onlineOrderRepository.findById(orderId).ifPresent(order -> {
+            LocalDateTime deliveredAt = ("delivered".equals(newStatus) || "served".equals(newStatus))
+                    ? LocalDateTime.now()
+                    : order.deliveredAt();
             OnlineOrder updated = new OnlineOrder(
                     order.id(),
                     order.orderNumber(),
@@ -94,14 +104,127 @@ public class OnlineOrderService {
                     newStatus,
                     order.paymentStatus(),
                     order.paymentMethod(),
+                    order.cardHolderName(),
+                    order.cardLast4(),
+                    order.cardExpiry(),
+                    order.cardTransactionRef(),
                     order.orderedAt(),
                     order.expectedDeliveryAt(),
-                    "delivered".equals(newStatus) ? LocalDateTime.now() : order.deliveredAt(),
+                    deliveredAt,
                     order.notes(),
                     order.trackingToken());
             onlineOrderRepository.save(updated);
+
+            // When the online order is accepted for the kitchen, create a matching
+            // kitchen-order record so it appears in the KDS pending queue.
+            if ("confirmed".equals(newStatus) || "preparing".equals(newStatus)) {
+                syncKitchenOrder(updated);
+            }
+
             log.info("Online order {} status updated to: {}", orderId, newStatus);
         });
+    }
+
+    /**
+     * Accept an online order and send it to the kitchen queue.
+     */
+    public void acceptOrderForKitchen(String orderId) {
+        findOrder(orderId).ifPresent(order -> {
+            OnlineOrder accepted = new OnlineOrder(
+                    order.id(),
+                    order.orderNumber(),
+                    order.customerId(),
+                    order.customerName(),
+                    order.customerPhone(),
+                    order.customerEmail(),
+                    order.deliveryAddress(),
+                    order.deliveryType(),
+                    order.items(),
+                    order.subtotal(),
+                    order.deliveryFee(),
+                    order.discountAmount(),
+                    order.tax(),
+                    order.total(),
+                    "preparing",
+                    order.paymentStatus(),
+                    order.paymentMethod(),
+                    order.cardHolderName(),
+                    order.cardLast4(),
+                    order.cardExpiry(),
+                    order.cardTransactionRef(),
+                    order.orderedAt(),
+                    order.expectedDeliveryAt(),
+                    order.deliveredAt(),
+                    order.notes(),
+                    order.trackingToken());
+
+            onlineOrderRepository.save(accepted);
+            syncKitchenOrder(accepted);
+            log.info("Online order {} accepted and sent to kitchen", orderId);
+        });
+    }
+
+    private Optional<OnlineOrder> findOrder(String orderKey) {
+        Optional<OnlineOrder> byId = onlineOrderRepository.findById(orderKey);
+        if (byId.isPresent()) {
+            return byId;
+        }
+
+        Optional<OnlineOrder> byOrderNumber = onlineOrderRepository.findAll().stream()
+                .filter(order -> orderKey.equals(order.orderNumber()))
+                .findFirst();
+        if (byOrderNumber.isPresent()) {
+            return byOrderNumber;
+        }
+
+        return onlineOrderRepository.findAll().stream()
+                .filter(order -> orderKey.equals(order.trackingToken()))
+                .findFirst();
+    }
+
+    private void syncKitchenOrder(OnlineOrder onlineOrder) {
+        if (onlineOrder.orderNumber() == null || onlineOrder.orderNumber().isBlank()) {
+            return;
+        }
+
+        boolean alreadySynced = orderRepository.findAll().stream()
+                .anyMatch(existing -> onlineOrder.orderNumber().equals(existing.kotToken()));
+
+        if (alreadySynced) {
+            return;
+        }
+
+        int orderNo = (int) (orderRepository.count() + 1);
+        String source = "delivery".equalsIgnoreCase(onlineOrder.deliveryType()) ? "delivery" : "takeaway";
+        String kotToken = onlineOrder.orderNumber();
+
+        Order kitchenOrder = new Order(
+                null,
+                orderNo,
+                null,
+                null,
+                source,
+                onlineOrder.items(),
+                onlineOrder.total(),
+                "pending",
+                onlineOrder.total(),
+                0.0,
+                onlineOrder.paymentMethod(),
+                LocalDateTime.now(),
+                LocalDateTime.now(),
+                LocalDateTime.now(),
+                null,
+                onlineOrder.paymentStatus() == null
+                        ? ("card".equalsIgnoreCase(onlineOrder.paymentMethod()) ? "paid" : "pending")
+                        : onlineOrder.paymentStatus(),
+                onlineOrder.customerName(),
+                onlineOrder.customerPhone(),
+                onlineOrder.notes(),
+                "",
+                kotToken);
+
+        orderRepository.save(kitchenOrder);
+        log.info("Created kitchen order for online order {} with KOT {}", onlineOrder.orderNumber(), kotToken);
     }
 
     /**
@@ -124,11 +247,11 @@ public class OnlineOrderService {
                 0.0,
                 0.0,
                 onlineOrder.paymentMethod(),
+                LocalDateTime.now(),
+                LocalDateTime.now(),
+                LocalDateTime.now(),
                 null,
-                LocalDateTime.now(),
-                LocalDateTime.now(),
-                LocalDateTime.now().plusMinutes(30), // Served time
-                "confirmed", // Payment status
+                "card".equalsIgnoreCase(onlineOrder.paymentMethod()) ? "paid" : "pending", // Payment status
                 onlineOrder.customerName(),
                 onlineOrder.customerPhone(),
                 onlineOrder.notes(),
