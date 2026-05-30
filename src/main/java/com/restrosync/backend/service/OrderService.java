@@ -132,8 +132,9 @@ public class OrderService {
                         extra != null ? extra.ingredientId() : null);
             }).toList();
 
-            orderItems.add(new Order.OrderItem(i.menuItemId(), itemName, i.sizeName(), i.price(), i.qty(), extras, 0.0,
-                    0.0, 0.0, 0.0));
+            orderItems
+                    .add(new Order.OrderItem(i.menuItemId(), itemName, i.sizeName(), i.price(), i.qty(), extras, false,
+                            0.0, 0.0, 0.0, 0.0));
         }
 
         Order order = new Order(
@@ -295,8 +296,8 @@ public class OrderService {
                 }).toList();
 
                 newOrderItems.add(
-                        new Order.OrderItem(i.menuItemId(), itemName, i.sizeName(), i.price(), i.qty(), extras, 0.0,
-                                0.0, 0.0, 0.0));
+                        new Order.OrderItem(i.menuItemId(), itemName, i.sizeName(), i.price(), i.qty(), extras, false,
+                                0.0, 0.0, 0.0, 0.0));
             }
 
             // Merge new items with existing items
@@ -330,6 +331,40 @@ public class OrderService {
 
             log.info("✅ Items added to order #{}, new total: {}", order.orderNo(), newTotal);
             return orderMapper.toResponseDto(saved);
+        }).orElse(null);
+    }
+
+    public OrderResponseDto updateOrderItemChecked(String id, int itemIndex, boolean checked) {
+        return orderRepository.findById(id).map(order -> {
+            if (order.items() == null || itemIndex < 0 || itemIndex >= order.items().size()) {
+                throw new IllegalArgumentException("Invalid order item index");
+            }
+
+            List<Order.OrderItem> updatedItems = new ArrayList<>(order.items());
+            Order.OrderItem current = updatedItems.get(itemIndex);
+            updatedItems.set(itemIndex, new Order.OrderItem(
+                    current.menuItemId(),
+                    current.menuItemName(),
+                    current.sizeName(),
+                    current.basePrice(),
+                    current.qty(),
+                    current.extras(),
+                    checked,
+                    current.chickenUsed(),
+                    current.riceUsed(),
+                    current.cheeseUsed(),
+                    current.totalIngredientCost()));
+
+            Order updated = new Order(
+                    order.id(), order.orderNo(), order.tableId(), order.tableNumber(), order.source(),
+                    updatedItems, order.total(), order.status(),
+                    order.amountPaid(), order.changeGiven(), order.paymentMethod(), order.paymentTime(),
+                    order.createdAt(), LocalDateTime.now(),
+                    order.servedAt(), order.paymentStatus(),
+                    order.customerName(), order.customerPhone(),
+                    order.notes(), order.waiterName(), order.kotToken());
+
+            return orderMapper.toResponseDto(orderRepository.save(updated));
         }).orElse(null);
     }
 }

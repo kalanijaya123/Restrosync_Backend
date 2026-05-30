@@ -20,6 +20,8 @@ public class OnlineOrderService {
 
     private final OnlineOrderRepository onlineOrderRepository;
     private final OrderRepository orderRepository;
+    private final SmsNotificationService smsNotificationService;
+    private final EmailNotificationService emailNotificationService;
 
     /**
      * Create new online order (Requirement 4.7)
@@ -59,7 +61,34 @@ public class OnlineOrderService {
                 order.notes(),
                 trackingToken);
 
-        return onlineOrderRepository.save(newOrder);
+        OnlineOrder saved = onlineOrderRepository.save(newOrder);
+
+        if (isPaid(saved)) {
+            List<String> itemLines = saved.items() == null ? List.of()
+                    : saved.items().stream()
+                            .map(item -> item.qty() + "x " + item.menuItemName())
+                            .toList();
+
+            smsNotificationService.sendInvoiceMessage(
+                    saved.customerPhone(),
+                    saved.orderNumber(),
+                    saved.customerName(),
+                    saved.total() == null ? 0.0 : saved.total(),
+                    saved.paymentMethod(),
+                    itemLines,
+                    saved.notes());
+
+            emailNotificationService.sendInvoiceEmail(
+                    saved.customerEmail(),
+                    saved.orderNumber(),
+                    saved.customerName(),
+                    saved.total() == null ? 0.0 : saved.total(),
+                    saved.paymentMethod(),
+                    itemLines,
+                    saved.notes());
+        }
+
+        return saved;
     }
 
     /**
@@ -162,6 +191,18 @@ public class OnlineOrderService {
             syncKitchenOrder(accepted);
             log.info("Online order {} accepted and sent to kitchen", orderId);
         });
+    }
+
+    private boolean isPaid(OnlineOrder order) {
+        if (order == null) {
+            return false;
+        }
+
+        if ("paid".equalsIgnoreCase(order.paymentStatus())) {
+            return true;
+        }
+
+        return "card".equalsIgnoreCase(order.paymentMethod());
     }
 
     private Optional<OnlineOrder> findOrder(String orderKey) {

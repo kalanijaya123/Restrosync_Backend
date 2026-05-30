@@ -92,4 +92,21 @@ public class OrderController {
                         return ResponseEntity.badRequest().body(null);
                 }
         }
+
+        @PutMapping("/{id}/items/{itemIndex}/checked")
+        public ResponseEntity<OrderResponseDto> updateOrderItemChecked(
+                        @PathVariable String id,
+                        @PathVariable int itemIndex,
+                        @RequestBody Map<String, Boolean> body) {
+                try {
+                        Boolean checked = body.get("checked");
+                        if (checked == null) {
+                                return ResponseEntity.badRequest().build();
+                        }
+                        OrderResponseDto updated = orderService.updateOrderItemChecked(id, itemIndex, checked);
+                        return updated == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(updated);
+                } catch (RuntimeException e) {
+                        return ResponseEntity.badRequest().body(null);
+                }
+        }
 }

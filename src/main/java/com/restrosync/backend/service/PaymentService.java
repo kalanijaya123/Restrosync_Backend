@@ -1,6 +1,7 @@
 package com.restrosync.backend.service;
 
 import com.restrosync.backend.dto.PaymentRequest;
+import com.restrosync.backend.model.Invoice;
 import com.restrosync.backend.model.Order;
 import com.restrosync.backend.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
@@ -8,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -15,6 +17,9 @@ import java.time.LocalDateTime;
 public class PaymentService {
 
     private final OrderRepository orderRepository;
+    private final InvoiceService invoiceService;
+    private final SmsNotificationService smsNotificationService;
+    private final EmailNotificationService emailNotificationService;
 
     @Transactional
     public Order processPayment(PaymentRequest request) {
@@ -66,6 +71,29 @@ public class PaymentService {
                 order.kotToken());
 
         Order saved = orderRepository.save(paidOrder);
+
+        Invoice invoice = invoiceService.generateInvoice(saved, "system");
+        List<String> itemLines = saved.items().stream()
+                .map(item -> item.qty() + "x " + item.menuItemName())
+                .toList();
+
+        smsNotificationService.sendInvoiceMessage(
+                saved.customerPhone(),
+                invoice.invoiceNumber(),
+                saved.customerName(),
+                saved.total(),
+                request.paymentMethod(),
+                itemLines,
+                saved.notes());
+
+        emailNotificationService.sendInvoiceEmail(
+                request.customerEmail(),
+                invoice.invoiceNumber(),
+                saved.customerName(),
+                saved.total(),
+                request.paymentMethod(),
+                itemLines,
+                saved.notes());
 
         // Don't deduct inventory yet - wait until sent to kitchen
 

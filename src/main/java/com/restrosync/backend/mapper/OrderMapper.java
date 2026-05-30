@@ -42,6 +42,7 @@ public class OrderMapper {
                                                                                                 e.quantityPerUnit(),
                                                                                                 e.ingredientId()))
                                                                                 .toList() : null,
+                                                                false,
                                                                 i.chickenUsed(),
                                                                 i.riceUsed(),
                                                                 i.cheeseUsed(),
@@ -95,6 +96,7 @@ public class OrderMapper {
                                                                         .sizeName(i.sizeName())
                                                                         .basePrice(i.basePrice())
                                                                         .qty(i.qty())
+                                                                        .checked(i.checked())
                                                                         .extras(i.extras() != null ? i.extras().stream()
                                                                                         .map(e -> OrderResponseDto.SelectedExtraDto
                                                                                                         .builder()

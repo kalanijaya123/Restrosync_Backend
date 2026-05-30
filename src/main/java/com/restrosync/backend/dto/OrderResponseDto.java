@@ -32,6 +32,7 @@ public record OrderResponseDto(
                         String sizeName,
                         Double basePrice,
                         Integer qty,
+                        Boolean checked,
                         List<SelectedExtraDto> extras,
                         Double chickenUsed,
                         Double riceUsed,
