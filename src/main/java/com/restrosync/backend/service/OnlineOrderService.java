@@ -22,6 +22,7 @@ public class OnlineOrderService {
     private final OrderRepository orderRepository;
     private final SmsNotificationService smsNotificationService;
     private final EmailNotificationService emailNotificationService;
+    private final DeliverySettingsService deliverySettingsService;
 
     /**
      * Create new online order (Requirement 4.7)
@@ -32,6 +33,19 @@ public class OnlineOrderService {
         String orderNumber = "ONL-" + System.currentTimeMillis();
         String trackingToken = UUID.randomUUID().toString();
 
+        boolean delivery = "delivery".equalsIgnoreCase(order.deliveryType());
+        var deliveryCalculation = delivery
+                ? deliverySettingsService.calculateFee(order.deliveryLatitude(), order.deliveryLongitude())
+                : new com.restrosync.backend.dto.DeliveryFeeResponse(0.0, 0.0);
+
+        double subtotal = order.subtotal() == null ? 0.0 : order.subtotal();
+        double discountAmount = order.discountAmount() == null ? 0.0 : order.discountAmount();
+        double tax = order.tax() == null ? 0.0 : order.tax();
+        double deliveryFee = delivery
+                ? (deliveryCalculation.deliveryFee() == null ? 0.0 : deliveryCalculation.deliveryFee())
+                : 0.0;
+        double total = Math.max(0.0, subtotal - discountAmount + tax + deliveryFee);
+
         OnlineOrder newOrder = new OnlineOrder(
                 null,
                 orderNumber,
@@ -40,13 +54,16 @@ public class OnlineOrderService {
                 order.customerPhone(),
                 order.customerEmail(),
                 order.deliveryAddress(),
+                delivery ? order.deliveryLatitude() : null,
+                delivery ? order.deliveryLongitude() : null,
+                delivery ? deliveryCalculation.distanceKm() : null,
                 order.deliveryType(),
                 order.items(),
-                order.subtotal(),
-                order.deliveryFee(),
-                order.discountAmount(),
-                order.tax(),
-                order.total(),
+                subtotal,
+                deliveryFee,
+                discountAmount,
+                tax,
+                total,
                 "pending_payment", // Initial status
                 order.paymentStatus() != null ? order.paymentStatus()
                         : "card".equalsIgnoreCase(order.paymentMethod()) ? "paid" : "pending", // Payment status
@@ -123,6 +140,9 @@ public class OnlineOrderService {
                     order.customerPhone(),
                     order.customerEmail(),
                     order.deliveryAddress(),
+                    order.deliveryLatitude(),
+                    order.deliveryLongitude(),
+                    order.deliveryDistanceKm(),
                     order.deliveryType(),
                     order.items(),
                     order.subtotal(),
@@ -167,6 +187,9 @@ public class OnlineOrderService {
                     order.customerPhone(),
                     order.customerEmail(),
                     order.deliveryAddress(),
+                    order.deliveryLatitude(),
+                    order.deliveryLongitude(),
+                    order.deliveryDistanceKm(),
                     order.deliveryType(),
                     order.items(),
                     order.subtotal(),

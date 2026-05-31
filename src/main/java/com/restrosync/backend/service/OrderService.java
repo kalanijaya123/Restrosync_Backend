@@ -139,7 +139,7 @@ public class OrderService {
 
         Order order = new Order(
                 null, orderNo, tableId, tableNumber, request.source(), orderItems, request.total(),
-                "payment_pending", // status - not visible to kitchen until paid
+                "pending", // visible to kitchen immediately, payment is handled separately
                 0.0, // amountPaid
                 0.0, // changeGiven
                 null, // paymentMethod
@@ -213,12 +213,6 @@ public class OrderService {
         log.info("🍳 SEND TO KITCHEN called for order ID: {}", id);
         return orderRepository.findById(id).map(order -> {
             log.info("  Order found: #{} (paymentStatus: {})", order.orderNo(), order.paymentStatus());
-            // Verify order is paid
-            if (!"paid".equals(order.paymentStatus())) {
-                log.error("  ❌ Order must be paid before sending to kitchen. Current status: {}",
-                        order.paymentStatus());
-                throw new RuntimeException("Order must be paid before sending to kitchen");
-            }
 
             // Generate KOT token if not exists
             String kotToken = order.kotToken();
@@ -252,9 +246,12 @@ public class OrderService {
 
     public OrderResponseDto payOrder(String id) {
         return orderRepository.findById(id).map(order -> {
+            String nextStatus = Set.of("pending", "preparing", "ready").contains(order.status())
+                    ? order.status()
+                    : "pending";
             Order paid = new Order(
                     order.id(), order.orderNo(), order.tableId(), order.tableNumber(), order.source(),
-                    order.items(), order.total(), "paid_awaiting_kitchen",
+                    order.items(), order.total(), nextStatus,
                     order.total(), 0.0, "cash", LocalDateTime.now(),
                     order.createdAt(), LocalDateTime.now(),
                     order.servedAt(), "paid",

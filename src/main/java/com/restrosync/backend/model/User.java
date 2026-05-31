@@ -9,7 +9,15 @@ public record User(
                 String username,
                 String email,
                 String password,
-                String role
+                String role,
+                Boolean canAccessPos,
+                Boolean canAccessKds,
+                Boolean canAccessOnlineOrder,
+                Boolean canManageDiscounts,
+                Boolean canManageMenu,
+                Boolean canManageInventory,
+                Boolean canAccessKitchenStatus,
+                Boolean canAccessThirdPartyOrders
 
 ) {
 }

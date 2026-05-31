@@ -10,4 +10,6 @@ public interface UserRepository extends MongoRepository<User, String> {
 
     @org.springframework.data.mongodb.repository.Query("{ 'email': ?0 }")
     Optional<User> findByEmail(String email);
+
+    java.util.List<User> findByRole(String role);
 }

@@ -1,6 +1,7 @@
 package com.restrosync.backend.controller;
 
 import com.restrosync.backend.model.Discount;
+import com.restrosync.backend.service.AuthService;
 import com.restrosync.backend.service.DiscountService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +18,7 @@ import java.util.Optional;
 public class DiscountController {
 
     private final DiscountService discountService;
+    private final AuthService authService;
 
     /**
      * Get all public discounts (for customers and staff)
@@ -61,6 +63,9 @@ public class DiscountController {
      */
     @PostMapping
     public ResponseEntity<Discount> createDiscount(@RequestBody Discount discount, @RequestHeader String userId) {
+        if (!authService.isManager(userId)) {
+            return ResponseEntity.status(403).build();
+        }
         return ResponseEntity.ok(discountService.createDiscount(discount, userId));
     }
 
@@ -69,6 +74,9 @@ public class DiscountController {
      */
     @DeleteMapping("/{discountId}")
     public ResponseEntity<String> deactivateDiscount(@PathVariable String discountId, @RequestHeader String userId) {
+        if (!authService.isManager(userId)) {
+            return ResponseEntity.status(403).build();
+        }
         discountService.deactivateDiscount(discountId, userId);
         return ResponseEntity.ok("Discount deactivated successfully");
     }
